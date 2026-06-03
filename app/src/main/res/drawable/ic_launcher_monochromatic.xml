@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Clean, high-contrast flat monochromatic version for Material You system tinting -->
+    <!-- 1. Top-Left Finder block outline -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="3.2"
+        android:strokeLineJoin="round"
+        android:pathData="M 24,24 H 40 V 40 H 24 Z" />
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M 29,29 H 35 V 35 H 29 Z" />
+
+    <!-- 2. Top-Right Finder block outline -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="3.2"
+        android:strokeLineJoin="round"
+        android:pathData="M 68,24 H 84 V 40 H 68 Z" />
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M 73,29 H 79 V 35 H 73 Z" />
+
+    <!-- 3. Bottom-Left Finder block outline -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="3.2"
+        android:strokeLineJoin="round"
+        android:pathData="M 24,68 H 40 V 84 H 24 Z" />
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M 29,73 H 35 V 79 H 29 Z" />
+
+    <!-- 4. Bottom-Right Alignment dots & Small Modules -->
+    <path
+        android:fillColor="#ffffff"
+        android:pathData="M 71,71 H 75 V 75 H 71 Z M 77,77 H 81 V 81 H 77 Z M 46,24 H 50 V 28 H 46 Z M 58,24 H 62 V 28 H 58 Z M 24,46 H 28 V 50 H 24 Z M 24,58 H 28 V 62 H 24 Z M 80,46 H 84 V 50 H 80 Z M 80,58 H 84 V 62 H 80 Z M 46,80 H 50 V 84 H 46 Z M 58,80 H 62 V 84 H 58 Z" />
+
+    <!-- 5. Central sharing circle & arrows -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="2.5"
+        android:pathData="M 54,39 A 15,15 0 1,1 53.99,39 Z" />
+
+    <!-- Arrow 1: Pointing Left (Upload/Send) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 46,48.5 L 60,48.5" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 51,44 L 46,48.5 L 51,53" />
+
+    <!-- Arrow 2: Pointing Right (Download/Receive) -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 48,57.5 L 62,57.5" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#ffffff"
+        android:strokeWidth="2.4"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M 57,53 L 62,57.5 L 57,62" />
+
+</vector>

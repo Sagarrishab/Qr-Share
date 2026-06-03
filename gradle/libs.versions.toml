@@ -1,5 +1,6 @@
 [versions]
 agp = "9.1.1"
+jsch = "0.2.20"
 coreKtx = "1.18.0"
 junit = "4.13.2"
 junitVersion = "1.3.0"
@@ -89,6 +90,7 @@ roborazzi-junit-rule = { group = "io.github.takahirom.roborazzi", name = "robora
 firebase-bom = { group = "com.google.firebase", name = "firebase-bom", version.ref = "firebaseBom" }
 firebase-ai = { group = "com.google.firebase", name = "firebase-ai" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+jsch = { group = "com.github.mwiede", name = "jsch", version.ref = "jsch" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

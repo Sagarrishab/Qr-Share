@@ -136,13 +136,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _customUrlAlias = MutableStateFlow<String>("sds")
     val customUrlAlias: StateFlow<String> = _customUrlAlias.asStateFlow()
 
+    // Global Tunneling State Flows (to share files globally beyond the local network)
+    val globalTunnelUrl: StateFlow<String?> = GlobalTunnelManager.tunnelUrl
+    val isGlobalTunnelConnecting: StateFlow<Boolean> = GlobalTunnelManager.isConnecting
+    val globalTunnelError: StateFlow<String?> = GlobalTunnelManager.tunnelError
+
+    fun startGlobalSharingTunnel() {
+        val port = _selectedPort.value
+        if (port > 0) {
+            GlobalTunnelManager.startTunnel(port, viewModelScope)
+        }
+    }
+
+    fun stopGlobalSharingTunnel() {
+        GlobalTunnelManager.stopTunnel()
+    }
+
     // Theme Customizations
     private val prefs = context.getSharedPreferences("theme_prefs", Context.MODE_PRIVATE)
 
     private val _themeMode = MutableStateFlow(prefs.getString("theme_mode", "ALWAYS_DARK") ?: "ALWAYS_DARK")
     val themeMode: StateFlow<String> = _themeMode.asStateFlow()
 
-    private val _themeColor = MutableStateFlow(prefs.getString("theme_color", "COSMIC_CYAN") ?: "COSMIC_CYAN")
+    private val _themeColor = MutableStateFlow(prefs.getString("theme_color", "SYSTEM_DYNAMIC") ?: "SYSTEM_DYNAMIC")
     val themeColor: StateFlow<String> = _themeColor.asStateFlow()
 
     fun updateThemeMode(mode: String) {
@@ -236,6 +252,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun stopLocalServer() {
+        stopGlobalSharingTunnel()
         fileServer.stop()
         _serverUrl.value = null
         synchronized(fileServer.sharedFiles) {

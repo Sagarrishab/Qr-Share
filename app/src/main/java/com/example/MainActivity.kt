@@ -5,6 +5,7 @@ import android.annotation.SuppressLint
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import android.util.Log
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +66,11 @@ class MainActivity : ComponentActivity() {
         setContent {
             val themeMode by viewModel.themeMode.collectAsState()
             val themeColor by viewModel.themeColor.collectAsState()
-            MyApplicationTheme(themeMode = themeMode, themeColor = themeColor) {
+            MyApplicationTheme(
+                themeMode = themeMode,
+                themeColor = themeColor,
+                dynamicColor = (themeColor == "SYSTEM_DYNAMIC")
+            ) {
                 MainScreen(
                     viewModel = viewModel,
                     modifier = Modifier.fillMaxSize()
@@ -95,6 +101,10 @@ fun MainScreen(
     val customUrlAlias by viewModel.customUrlAlias.collectAsState()
     val connectedDevices by viewModel.connectedDevices.collectAsState()
     val isNetworkConnected by viewModel.isNetworkConnected.collectAsState()
+
+    val globalTunnelUrl by viewModel.globalTunnelUrl.collectAsState()
+    val isGlobalTunnelConnecting by viewModel.isGlobalTunnelConnecting.collectAsState()
+    val globalTunnelError by viewModel.globalTunnelError.collectAsState()
 
     var bottomTab by remember { mutableStateOf("HOME") }
     var showAboutAppDialog by remember { mutableStateOf(false) }
@@ -136,20 +146,38 @@ fun MainScreen(
         bottomBar = {
             NavigationBar(
                 containerColor = MaterialTheme.colorScheme.surface,
+                tonalElevation = 8.dp,
                 modifier = Modifier.testTag("bottom_nav")
             ) {
+                val navItemColors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = MaterialTheme.colorScheme.primary,
+                    selectedTextColor = MaterialTheme.colorScheme.primary,
+                    indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
                 NavigationBarItem(
                     selected = bottomTab == "HOME",
                     onClick = { bottomTab = "HOME" },
                     icon = { Icon(imageVector = Icons.Default.Home, contentDescription = "Home") },
                     label = { Text("Home") },
+                    colors = navItemColors,
                     modifier = Modifier.testTag("nav_home")
+                )
+                NavigationBarItem(
+                    selected = bottomTab == "GLOBAL",
+                    onClick = { bottomTab = "GLOBAL" },
+                    icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Global Share") },
+                    label = { Text("Global Share") },
+                    colors = navItemColors,
+                    modifier = Modifier.testTag("nav_global")
                 )
                 NavigationBarItem(
                     selected = bottomTab == "HOW_TO_USE",
                     onClick = { bottomTab = "HOW_TO_USE" },
                     icon = { Icon(imageVector = Icons.Default.Info, contentDescription = "How to Use") },
                     label = { Text("How to Use") },
+                    colors = navItemColors,
                     modifier = Modifier.testTag("nav_how_to_use")
                 )
                 NavigationBarItem(
@@ -157,6 +185,7 @@ fun MainScreen(
                     onClick = { bottomTab = "MORE" },
                     icon = { Icon(imageVector = Icons.Default.Menu, contentDescription = "More") },
                     label = { Text("More") },
+                    colors = navItemColors,
                     modifier = Modifier.testTag("nav_more")
                 )
             }
@@ -209,6 +238,7 @@ fun MainScreen(
                                         selectedIp = selectedIp,
                                         selectedPort = selectedPort,
                                         activeServerTransfers = activeServerTransfers,
+                                        globalTunnelUrl = globalTunnelUrl,
                                         onUpdateHost = { ip, port -> viewModel.updateHostAddressAndPort(ip, port) },
                                         onAddFiles = { hostFilePickerLauncher.launch("*/*") },
                                         onRemoveShare = { viewModel.removeHostShare(it) }
@@ -240,6 +270,19 @@ fun MainScreen(
                             }
                         }
                     }
+                }
+                "GLOBAL" -> {
+                    GlobalSharePage(
+                        serverUrl = serverUrl,
+                        globalTunnelUrl = globalTunnelUrl,
+                        isGlobalTunnelConnecting = isGlobalTunnelConnecting,
+                        globalTunnelError = globalTunnelError,
+                        onStartGlobalTunnel = { viewModel.startGlobalSharingTunnel() },
+                        onStopGlobalTunnel = { viewModel.stopGlobalSharingTunnel() },
+                        onStartLocalServer = { viewModel.startLocalServer() },
+                        hostedFilesCount = hostedFiles.size,
+                        context = context
+                    )
                 }
                 "HOW_TO_USE" -> {
                     HowToUsePage()
@@ -404,6 +447,355 @@ fun HowToUsePage() {
 }
 
 @Composable
+fun GlobalSharePage(
+    serverUrl: String?,
+    globalTunnelUrl: String?,
+    isGlobalTunnelConnecting: Boolean,
+    globalTunnelError: String?,
+    onStartGlobalTunnel: () -> Unit,
+    onStopGlobalTunnel: () -> Unit,
+    onStartLocalServer: () -> Unit,
+    hostedFilesCount: Int,
+    context: Context
+) {
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+        contentPadding = PaddingValues(bottom = 24.dp)
+    ) {
+        item {
+            Column {
+                Text(
+                    text = "Global Internet Sharing",
+                    style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Text(
+                    text = "Secure local-to-cloud proxy tunnel to access your hosted files from anywhere in the world.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Checklist/Status box of prerequisite (Local File Server)
+        item {
+            val isServerActive = serverUrl != null
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = if (isServerActive) {
+                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.1f)
+                    } else {
+                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.1f)
+                    }
+                ),
+                border = BorderStroke(
+                    1.dp,
+                    if (isServerActive) MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
+                    else MaterialTheme.colorScheme.error.copy(alpha = 0.3f)
+                )
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Icon(
+                        imageVector = if (isServerActive) Icons.Default.Check else Icons.Default.Info,
+                        contentDescription = "Local Sharing Status",
+                        tint = if (isServerActive) Color(0xFF10B981) else MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = if (isServerActive) "Local Server Active" else "Local Server Inactive",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = if (isServerActive) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.error
+                        )
+                        Text(
+                            text = if (isServerActive) {
+                                "Serving $hostedFilesCount shared files over local IP: $serverUrl"
+                            } else {
+                                "The local server must be running to enable global sharing."
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    if (!isServerActive) {
+                        Button(
+                            onClick = onStartLocalServer,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.error
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                        ) {
+                            Text("Start", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+        }
+
+        // Connection Control Card
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.surface
+                ),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f))
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Share,
+                            contentDescription = "Global Tunnel",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp)
+                        )
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "World-Wide Access Tunnel",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Expose your temporary local server endpoints over secure SSL web proxy gateways",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (globalTunnelUrl != null) {
+                        // Success Panel
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "Internet-Wide Access Link Created Successfully",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(bottom = 6.dp)
+                                )
+                                Text(
+                                    text = globalTunnelUrl,
+                                    style = MaterialTheme.typography.bodyLarge.copy(
+                                        fontWeight = FontWeight.SemiBold,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                
+                                Spacer(modifier = Modifier.height(16.dp))
+                                
+                                Row(
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Button(
+                                        onClick = {
+                                            copyToClipboard(context, globalTunnelUrl)
+                                            Toast.makeText(context, "Link Copied!", Toast.LENGTH_SHORT).show()
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Copy Tunnel Link")
+                                    }
+                                    
+                                    Button(
+                                        onClick = {
+                                            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                                type = "text/plain"
+                                                putExtra(Intent.EXTRA_TEXT, "Here is a global link to access my files directly from my phone: $globalTunnelUrl")
+                                            }
+                                            context.startActivity(Intent.createChooser(shareIntent, "Share Global Link"))
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.secondary,
+                                            contentColor = MaterialTheme.colorScheme.onSecondary
+                                        ),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Text("Share Link")
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        Button(
+                            onClick = onStopGlobalTunnel,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Stop Global Sharing", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        }
+                    } else if (isGlobalTunnelConnecting) {
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 3.dp,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Spawning secure multi-port SSH tunnel...",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Tunneling traffic from standard port to $serverUrl",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = onStopGlobalTunnel,
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                Text("Cancel Connection", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                            }
+                        }
+                    } else {
+                        if (globalTunnelError != null) {
+                            Surface(
+                                shape = RoundedCornerShape(10.dp),
+                                color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f)),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(bottom = 12.dp)
+                            ) {
+                                Text(
+                                    text = globalTunnelError,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(12.dp)
+                                )
+                            }
+                        }
+                        Button(
+                            onClick = onStartGlobalTunnel,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            enabled = serverUrl != null
+                        ) {
+                            Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Generate World-Wide Link", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+        }
+
+        // How World-Wide Sharing Works Panel
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "How Secure Global Links Work",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    
+                    val explanationPoints = listOf(
+                        "No Cloud Storages Involved" to "Your files remain strictly inside your device's local memory. The link serves them direct, peer-to-peer over secure tunnel mapping rules.",
+                        "E2E Secure SSH Tunnel" to "JSch library establishes a secure SSH relay forwarder through verified gateways, bypassing cellular and router firewalls completely.",
+                        "One-Click Stop" to "As soon as you toggle 'Stop Global Sharing' or close the app, the tunnel closes permanently. No persistent internet access is left active.",
+                        "Any Web Browser Ready" to "Your friends/colleagues on Windows, Mac, Linux, or iOS can access, view, and upload files to your designated directories simply by entering the link."
+                    )
+                    
+                    explanationPoints.forEachIndexed { index, pair ->
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 4.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "${index + 1}.",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = pair.first,
+                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                                Text(
+                                    text = pair.second,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun MorePage(
     customUrlAlias: String,
     connectedDevices: Map<String, ConnectedClient>,
@@ -542,19 +934,33 @@ fun MorePage(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val colorOptions = listOf(
+                            "SYSTEM_DYNAMIC" to null,
                             "COSMIC_CYAN" to Color(0xFF38BDF8),
                             "SUNSET_ORANGE" to Color(0xFFFB923C),
                             "ROYAL_PURPLE" to Color(0xFFC084FC),
                             "FOREST_GREEN" to Color(0xFF34D399),
                             "OCEAN_BLUE" to Color(0xFF60A5FA)
                         )
+                        val dynamicBrush = Brush.sweepGradient(
+                            colors = listOf(
+                                Color(0xFF38BDF8),
+                                Color(0xFFC084FC),
+                                Color(0xFFF472B6),
+                                Color(0xFFFB923C),
+                                Color(0xFF34D399),
+                                Color(0xFF38BDF8)
+                            )
+                        )
                         colorOptions.forEach { (colorName, color) ->
                             val selected = currentThemeColor == colorName
                             Box(
                                 modifier = Modifier
-                                    .size(44.dp)
+                                    .size(40.dp)
                                     .clip(CircleShape)
-                                    .background(color)
+                                    .then(
+                                        if (color != null) Modifier.background(color)
+                                        else Modifier.background(dynamicBrush)
+                                    )
                                     .border(
                                         width = if (selected) 3.dp else 1.dp,
                                         color = if (selected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
@@ -568,12 +974,20 @@ fun MorePage(
                                     Icon(
                                         imageVector = Icons.Default.Check,
                                         contentDescription = "Selected",
-                                        tint = if (colorName == "COSMIC_CYAN" || colorName == "ROYAL_PURPLE" || colorName == "FOREST_GREEN" || colorName == "OCEAN_BLUE") Color(0xFF0F172A) else Color.White,
-                                        modifier = Modifier.size(20.dp)
+                                        tint = if (colorName == "COSMIC_CYAN" || colorName == "ROYAL_PURPLE" || colorName == "FOREST_GREEN" || colorName == "OCEAN_BLUE" || colorName == "SYSTEM_DYNAMIC") Color(0xFF0F172A) else Color.White,
+                                        modifier = Modifier.size(18.dp)
                                     )
                                 }
                             }
                         }
+                    }
+                    if (currentThemeColor == "SYSTEM_DYNAMIC") {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Dynamic theme active: styled dynamically using your device's wallpaper and system state.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -672,7 +1086,7 @@ fun MorePage(
                         try {
                             val uri = FileProvider.getUriForFile(
                                 context,
-                                "${context.packageName}.provider",
+                                "${context.packageName}.fileprovider",
                                 file
                             )
                             val intent = Intent(Intent.ACTION_SEND).apply {
@@ -1075,17 +1489,28 @@ fun HostSharingPanel(
     selectedIp: String,
     selectedPort: Int,
     activeServerTransfers: Map<String, ActiveTransfer>,
+    globalTunnelUrl: String?,
     onUpdateHost: (String, Int) -> Unit,
     onAddFiles: () -> Unit,
     onRemoveShare: (OutgoingShare) -> Unit
 ) {
     val context = LocalContext.current
     var isSettingsExpanded by remember { mutableStateOf(false) }
-    var qrUseShortUrl by remember { mutableStateOf(false) }
+    var qrAddressType by remember { mutableStateOf("IP") }
     var viewMode by remember { mutableStateOf("LIST") }
 
+    androidx.compose.runtime.LaunchedEffect(globalTunnelUrl) {
+        if (globalTunnelUrl != null) {
+            qrAddressType = "GLOBAL"
+        }
+    }
+
     val shortUrl = "http://$customUrlAlias.local:$selectedPort"
-    val qrUrl = if (qrUseShortUrl && serverUrl != null) shortUrl else (serverUrl ?: "")
+    val qrUrl = when (qrAddressType) {
+        "MDNS" -> shortUrl
+        "GLOBAL" -> globalTunnelUrl ?: ""
+        else -> serverUrl ?: ""
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -1160,33 +1585,50 @@ fun HostSharingPanel(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(vertical = 6.dp),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             FilledTonalButton(
-                                onClick = { qrUseShortUrl = false },
+                                onClick = { qrAddressType = "IP" },
                                 modifier = Modifier.weight(1f).testTag("select_ip_url_qr"),
                                 colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = if (!qrUseShortUrl) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    contentColor = if (!qrUseShortUrl) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    containerColor = if (qrAddressType == "IP") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    contentColor = if (qrAddressType == "IP") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(12.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("IP Address (Best)", style = MaterialTheme.typography.labelMedium)
+                                Text("IP Address", style = MaterialTheme.typography.labelSmall)
                             }
                             FilledTonalButton(
-                                onClick = { qrUseShortUrl = true },
-                                modifier = Modifier.weight(1f).testTag("select_short_url_qr"),
+                                onClick = { qrAddressType = "MDNS" },
+                                modifier = Modifier.weight(1.1f).testTag("select_short_url_qr"),
                                 colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = if (qrUseShortUrl) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    contentColor = if (qrUseShortUrl) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                    containerColor = if (qrAddressType == "MDNS") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    contentColor = if (qrAddressType == "MDNS") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                                 ),
-                                shape = RoundedCornerShape(10.dp)
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
                             ) {
-                                Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(12.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("Short Name (mDNS)", style = MaterialTheme.typography.labelMedium)
+                                Text("mDNS Name", style = MaterialTheme.typography.labelSmall)
+                            }
+                            FilledTonalButton(
+                                onClick = { if (globalTunnelUrl != null) qrAddressType = "GLOBAL" },
+                                enabled = globalTunnelUrl != null,
+                                modifier = Modifier.weight(1.2f).testTag("select_global_url_qr"),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (qrAddressType == "GLOBAL") MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    contentColor = if (qrAddressType == "GLOBAL") MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = RoundedCornerShape(10.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                            ) {
+                                Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(12.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Global Link", style = MaterialTheme.typography.labelSmall)
                             }
                         }
 
@@ -1201,7 +1643,7 @@ fun HostSharingPanel(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.background,
-                                border = BorderStroke(1.dp, if (qrUseShortUrl) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                                border = BorderStroke(1.dp, if (qrAddressType == "MDNS") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -1218,7 +1660,7 @@ fun HostSharingPanel(
                                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                                 color = MaterialTheme.colorScheme.primary
                                             )
-                                            if (qrUseShortUrl) {
+                                            if (qrAddressType == "MDNS") {
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Surface(
                                                     shape = RoundedCornerShape(4.dp),
@@ -1261,7 +1703,7 @@ fun HostSharingPanel(
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = MaterialTheme.colorScheme.background,
-                                border = BorderStroke(1.dp, if (!qrUseShortUrl) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                                border = BorderStroke(1.dp, if (qrAddressType == "IP") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Row(
@@ -1278,7 +1720,7 @@ fun HostSharingPanel(
                                                 style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                                                 color = MaterialTheme.colorScheme.secondary
                                             )
-                                            if (!qrUseShortUrl) {
+                                            if (qrAddressType == "IP") {
                                                 Spacer(modifier = Modifier.width(6.dp))
                                                 Surface(
                                                     shape = RoundedCornerShape(4.dp),
@@ -1295,7 +1737,7 @@ fun HostSharingPanel(
                                             }
                                         }
                                         Text(
-                                            text = serverUrl,
+                                            text = serverUrl ?: "",
                                             style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
                                             color = MaterialTheme.colorScheme.onSurface,
                                             maxLines = 1,
@@ -1316,8 +1758,264 @@ fun HostSharingPanel(
                                     }
                                 }
                             }
+
+                            // Global Tunnel URL alternative (Only show if tunnel is running)
+                            if (globalTunnelUrl != null) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = MaterialTheme.colorScheme.background,
+                                    border = BorderStroke(1.dp, if (qrAddressType == "GLOBAL") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = "Global Sharing URL",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                if (qrAddressType == "GLOBAL") {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = RoundedCornerShape(4.dp),
+                                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                                        modifier = Modifier.padding(vertical = 2.dp)
+                                                    ) {
+                                                        Text(
+                                                            text = "QR Active",
+                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
+                                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            Text(
+                                                text = globalTunnelUrl,
+                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                color = MaterialTheme.colorScheme.onSurface,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis
+                                            )
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        Button(
+                                            onClick = {
+                                                copyToClipboard(context, globalTunnelUrl)
+                                                Toast.makeText(context, "Global URL Copied!", Toast.LENGTH_SHORT).show()
+                                            },
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), contentColor = MaterialTheme.colorScheme.primary),
+                                            shape = RoundedCornerShape(8.dp),
+                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                        ) {
+                                            Text("Copy", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                                        }
+                                    }
+                                }
+                            }
                         }
 
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        /*
+                        // World-Wide Sharing (Zero-Config Global Tunnel) Card
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 4.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.12f)
+                            ),
+                            border = BorderStroke(
+                                1.dp,
+                                if (globalTunnelUrl != null) MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                                else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(16.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Share,
+                                        contentDescription = "Global Sharing",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(24.dp)
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = "World-Wide Sharing Link",
+                                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Text(
+                                            text = "Generate a secure link to access files from anywhere in the world.",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                Spacer(modifier = Modifier.height(14.dp))
+
+                                if (globalTunnelUrl != null) {
+                                    // Highlighted Global URL box
+                                    Surface(
+                                        shape = RoundedCornerShape(10.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f),
+                                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(
+                                                    text = "Access Link (Internet-Wide)",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    text = globalTunnelUrl,
+                                                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            Button(
+                                                onClick = {
+                                                    copyToClipboard(context, globalTunnelUrl)
+                                                    Toast.makeText(context, "Global Link Copied!", Toast.LENGTH_SHORT).show()
+                                                },
+                                                colors = ButtonDefaults.buttonColors(
+                                                    containerColor = MaterialTheme.colorScheme.primary,
+                                                    contentColor = MaterialTheme.colorScheme.onPrimary
+                                                ),
+                                                shape = RoundedCornerShape(8.dp),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Copy", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(12.dp))
+
+                                    // Guide to select QR Code
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Check,
+                                            contentDescription = "Active",
+                                            tint = Color(0xFF10B981),
+                                            modifier = Modifier.size(14.dp)
+                                        )
+                                        Text(
+                                            text = "Active! You can now toggle 'Global Link' under QR Code Address Type above to display its QR code.",
+                                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp),
+                                            color = Color(0xFF10B981)
+                                        )
+                                    }
+
+                                    Spacer(modifier = Modifier.height(14.dp))
+
+                                    Button(
+                                        onClick = onStopGlobalTunnel,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.errorContainer,
+                                            contentColor = MaterialTheme.colorScheme.onErrorContainer
+                                        ),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Close, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Stop Global Sharing", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                    }
+                                } else if (isGlobalTunnelConnecting) {
+                                    Column(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalAlignment = Alignment.CenterHorizontally
+                                    ) {
+                                        CircularProgressIndicator(
+                                            modifier = Modifier.size(24.dp),
+                                            strokeWidth = 2.dp,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                        Text(
+                                            text = "Connecting secure global proxy tunnel...",
+                                            style = Modifier.align(Alignment.CenterHorizontally).let { MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Medium) },
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                        Text(
+                                            text = "Establishing SSH over multi-port gateway",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.outline
+                                        )
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                        Button(
+                                            onClick = onStopGlobalTunnel,
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                            ),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(10.dp)
+                                        ) {
+                                            Text("Cancel Connection", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                        }
+                                    }
+                                } else {
+                                    if (globalTunnelError != null) {
+                                        Text(
+                                            text = "Error: $globalTunnelError",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                    }
+                                    Button(
+                                        onClick = onStartGlobalTunnel,
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = MaterialTheme.colorScheme.primary,
+                                            contentColor = MaterialTheme.colorScheme.onPrimary
+                                        ),
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(10.dp)
+                                    ) {
+                                        Icon(imageVector = Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Text("Generate Global Link", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                                    }
+                                }
+                            }
+                        }
+
+                        */
                         Spacer(modifier = Modifier.height(14.dp))
                         Text(
                             text = "To access this phone's files, connect your computer to the same Wi-Fi router, then open either of the links in your web browser or scan the active QR code.",
@@ -2994,10 +3692,19 @@ fun isEmulator(): Boolean {
 }
 
 // Global copy utility helper
-fun copyToClipboard(context: Context, text: String) {
-    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    val clip = ClipData.newPlainText("scanned_url", text)
-    clipboard.setPrimaryClip(clip)
+fun copyToClipboard(context: Context, text: String?) {
+    if (text.isNullOrEmpty()) return
+    try {
+        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? ClipboardManager
+        if (clipboard != null) {
+            val clip = ClipData.newPlainText("scanned_url", text)
+            clipboard.setPrimaryClip(clip)
+        } else {
+            Log.e("Clipboard", "ClipboardManager is not available")
+        }
+    } catch (e: Exception) {
+        Log.e("Clipboard", "Failed to copy text into Android clipboard system", e)
+    }
 }
 
 // Global share utility helper using compliant FileProviders
