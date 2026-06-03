@@ -1,0 +1,6 @@
+{
+  "name": "QR File Share",
+  "description": "Seamlessly share files between Android and Windows with QR codes via high-speed local wireless network.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
