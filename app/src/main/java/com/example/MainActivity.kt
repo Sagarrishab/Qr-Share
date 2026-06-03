@@ -65,14 +65,10 @@ class MainActivity : ComponentActivity() {
             val themeMode by viewModel.themeMode.collectAsState()
             val themeColor by viewModel.themeColor.collectAsState()
             MyApplicationTheme(themeMode = themeMode, themeColor = themeColor) {
-                Scaffold(
+                MainScreen(
+                    viewModel = viewModel,
                     modifier = Modifier.fillMaxSize()
-                ) { innerPadding ->
-                    MainScreen(
-                        viewModel = viewModel,
-                        modifier = Modifier.padding(innerPadding)
-                    )
-                }
+                )
             }
         }
     }
@@ -904,7 +900,7 @@ fun AppHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 16.dp, start = 20.dp, end = 20.dp, bottom = 12.dp),
+            .padding(top = 4.dp, start = 20.dp, end = 20.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Icon(
@@ -1084,7 +1080,7 @@ fun HostSharingPanel(
 ) {
     val context = LocalContext.current
     var isSettingsExpanded by remember { mutableStateOf(false) }
-    var qrUseShortUrl by remember { mutableStateOf(true) }
+    var qrUseShortUrl by remember { mutableStateOf(false) }
     var viewMode by remember { mutableStateOf("LIST") }
 
     val shortUrl = "http://$customUrlAlias.local:$selectedPort"
@@ -1329,6 +1325,45 @@ fun HostSharingPanel(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 10.dp)
                         )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.15f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.25f)),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Info,
+                                        contentDescription = "Warning Info",
+                                        tint = MaterialTheme.colorScheme.error,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Text(
+                                        text = "Connection Guide & Troubleshooting:",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.error
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "1. Use HTTP, NOT HTTPS: This is an offline local network server. If your browser automatically upgrades the connection to HTTPS and displays a 'secure connection failed' error, click 'Continue to site' or 'Go to site (unsafe)'. You may also disable the 'Always use secure connections' setting in your browser.",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = "2. Use IP Address instead of Short URL: If 'sds.local' fails to load (DNS error), it means your Wi-Fi router blocks multicast hostname discovery. Simply use the 'Host IP Address' link/QR instead.",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
 
                     } else {
                         Box(

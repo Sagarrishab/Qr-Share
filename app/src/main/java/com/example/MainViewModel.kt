@@ -33,9 +33,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _isNetworkConnected = MutableStateFlow(false)
     val isNetworkConnected: StateFlow<Boolean> = _isNetworkConnected.asStateFlow()
 
+    private fun isNetworkCapable(capabilities: NetworkCapabilities?): Boolean {
+        if (capabilities == null) return false
+        return capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) ||
+                capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI_AWARE) ||
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
-            _isNetworkConnected.value = true
+            val capabilities = connectivityManager.getNetworkCapabilities(network)
+            _isNetworkConnected.value = isNetworkCapable(capabilities)
         }
 
         override fun onLost(network: Network) {
@@ -43,9 +53,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-            val hasInternet = networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
-                    networkCapabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
-            _isNetworkConnected.value = hasInternet
+            _isNetworkConnected.value = isNetworkCapable(networkCapabilities)
         }
     }
 
@@ -53,12 +61,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return try {
             val activeNetwork = connectivityManager.activeNetwork
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-            capabilities != null && (
-                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ||
-                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) ||
-                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) ||
-                    capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)
-            )
+            isNetworkCapable(capabilities)
         } catch (e: Exception) {
             false
         }
@@ -87,7 +90,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     val selectedIp: StateFlow<String> = _selectedIp.asStateFlow()
 
     // Current Server Port
-    private val _selectedPort = MutableStateFlow<Int>(8080)
+    private val _selectedPort = MutableStateFlow<Int>(8817)
     val selectedPort: StateFlow<Int> = _selectedPort.asStateFlow()
 
     // Hosted Files list
@@ -166,7 +169,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startLocalServer() {
         viewModelScope.launch(Dispatchers.IO) {
-            if (_selectedPort.value == 8080) {
+            if (_selectedPort.value == 0) {
                 regeneratePort()
             }
             val url = fileServer.start(_selectedPort.value, _customUrlAlias.value)
@@ -201,7 +204,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             fileServer.sharedFiles.clear()
         }
         _hostedFiles.value = emptyList()
-        regeneratePort()
+        // DO NOT regenerate port automatically when server is stopped.
+        // This keeps the IP and port extremely stable and predictable.
     }
 
     fun regeneratePort() {
