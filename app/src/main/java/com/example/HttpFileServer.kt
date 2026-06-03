@@ -101,7 +101,7 @@ class HttpFileServer(
         try {
             stop()
             currentPort = port
-            server = HttpServer.create(InetSocketAddress(port), 0).apply {
+            server = HttpServer.create(InetSocketAddress("0.0.0.0", port), 0).apply {
                 createContext("/", DashboardHandler())
                 createContext("/shared_files_json", FilesJsonHandler())
                 createContext("/download", DownloadHandler())
@@ -176,29 +176,7 @@ class HttpFileServer(
     fun isRunning(): Boolean = server != null
 
     fun getLocalIpAddress(): String {
-        var fallbackIp: String? = null
-        try {
-            val interfaces = NetworkInterface.getNetworkInterfaces()
-            for (networkInterface in interfaces) {
-                val addresses = networkInterface.inetAddresses
-                for (inetAddress in addresses) {
-                    if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
-                        val ip = inetAddress.hostAddress
-                        if (ip != null) {
-                            if (ip.startsWith("192.168.") || ip.startsWith("10.") || ip.startsWith("172.")) {
-                                return ip
-                            }
-                            if (fallbackIp == null) {
-                                fallbackIp = ip
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (ex: Exception) {
-            Log.e("HttpFileServer", "Error finding local IP address", ex)
-        }
-        return fallbackIp ?: "127.0.0.1"
+        return getAllLocalIpAddresses().firstOrNull() ?: "127.0.0.1"
     }
 
     fun getAllLocalIpAddresses(): List<String> {
@@ -1407,6 +1385,8 @@ class HttpServer private constructor(private val addr: InetSocketAddress) {
                 if (parts.size < 2) return
                 val method = parts[0].uppercase()
                 val rawPath = parts[1]
+
+                Log.d("HttpServer", "Incoming request: $method $rawPath from ${socket.remoteSocketAddress}")
 
                 val headersMap = mutableMapOf<String, String>()
                 while (true) {

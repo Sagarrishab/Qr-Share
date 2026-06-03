@@ -43,15 +43,18 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     private fun isCurrentlyConnected(capabilities: NetworkCapabilities?): Boolean {
+        try {
+            val ips = fileServer.getAllLocalIpAddresses()
+            if (ips.isNotEmpty() && ips.any { it != "127.0.0.1" }) {
+                return true
+            }
+        } catch (e: Exception) {
+            // fallback
+        }
         if (capabilities != null && isNetworkCapable(capabilities)) {
             return true
         }
-        return try {
-            val ips = fileServer.getAllLocalIpAddresses()
-            ips.isNotEmpty() && ips.any { it != "127.0.0.1" }
-        } catch (e: Exception) {
-            false
-        }
+        return false
     }
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {

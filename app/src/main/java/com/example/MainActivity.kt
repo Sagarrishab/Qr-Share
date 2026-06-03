@@ -1163,19 +1163,6 @@ fun HostSharingPanel(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             FilledTonalButton(
-                                onClick = { qrUseShortUrl = true },
-                                modifier = Modifier.weight(1f).testTag("select_short_url_qr"),
-                                colors = ButtonDefaults.filledTonalButtonColors(
-                                    containerColor = if (qrUseShortUrl) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                                    contentColor = if (qrUseShortUrl) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                                ),
-                                shape = RoundedCornerShape(10.dp)
-                            ) {
-                                Icon(imageVector = Icons.Default.FavoriteBorder, contentDescription = null, modifier = Modifier.size(14.dp))
-                                Spacer(modifier = Modifier.width(4.dp))
-                                Text("Short URL", style = MaterialTheme.typography.labelMedium)
-                            }
-                            FilledTonalButton(
                                 onClick = { qrUseShortUrl = false },
                                 modifier = Modifier.weight(1f).testTag("select_ip_url_qr"),
                                 colors = ButtonDefaults.filledTonalButtonColors(
@@ -1184,9 +1171,22 @@ fun HostSharingPanel(
                                 ),
                                 shape = RoundedCornerShape(10.dp)
                             ) {
+                                Icon(imageVector = Icons.Default.Check, contentDescription = null, modifier = Modifier.size(14.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("IP Address (Best)", style = MaterialTheme.typography.labelMedium)
+                            }
+                            FilledTonalButton(
+                                onClick = { qrUseShortUrl = true },
+                                modifier = Modifier.weight(1f).testTag("select_short_url_qr"),
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (qrUseShortUrl) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                    contentColor = if (qrUseShortUrl) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                ),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
                                 Icon(imageVector = Icons.Default.Info, contentDescription = null, modifier = Modifier.size(14.dp))
                                 Spacer(modifier = Modifier.width(4.dp))
-                                Text("IP Address", style = MaterialTheme.typography.labelMedium)
+                                Text("Short Name (mDNS)", style = MaterialTheme.typography.labelMedium)
                             }
                         }
 
