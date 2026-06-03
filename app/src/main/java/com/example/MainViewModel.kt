@@ -42,10 +42,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 
+    private fun isCurrentlyConnected(capabilities: NetworkCapabilities?): Boolean {
+        if (capabilities != null && isNetworkCapable(capabilities)) {
+            return true
+        }
+        return try {
+            val ips = fileServer.getAllLocalIpAddresses()
+            ips.isNotEmpty() && ips.any { it != "127.0.0.1" }
+        } catch (e: Exception) {
+            false
+        }
+    }
+
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             val capabilities = connectivityManager.getNetworkCapabilities(network)
-            _isNetworkConnected.value = isNetworkCapable(capabilities)
+            _isNetworkConnected.value = isCurrentlyConnected(capabilities)
         }
 
         override fun onLost(network: Network) {
@@ -53,7 +65,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
-            _isNetworkConnected.value = isNetworkCapable(networkCapabilities)
+            _isNetworkConnected.value = isCurrentlyConnected(networkCapabilities)
         }
     }
 
@@ -61,9 +73,14 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         return try {
             val activeNetwork = connectivityManager.activeNetwork
             val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork)
-            isNetworkCapable(capabilities)
+            isCurrentlyConnected(capabilities)
         } catch (e: Exception) {
-            false
+            try {
+                val ips = fileServer.getAllLocalIpAddresses()
+                ips.isNotEmpty() && ips.any { it != "127.0.0.1" }
+            } catch (ex: Exception) {
+                false
+            }
         }
     }
 
@@ -169,10 +186,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startLocalServer() {
         viewModelScope.launch(Dispatchers.IO) {
-            if (_selectedPort.value == 0) {
+            var port = _selectedPort.value
+            if (port == 0) {
                 regeneratePort()
+                port = _selectedPort.value
             }
-            val url = fileServer.start(_selectedPort.value, _customUrlAlias.value)
+            var url = fileServer.start(port, _customUrlAlias.value)
+            
+            // Port retry loop: if binding fails, try up to 5 alternative ports sequentially
+            var retries = 5
+            while (url == null && retries > 0) {
+                Log.w("MainViewModel", "Port $port is busy or unavailable. Trying another random port...")
+                regeneratePort()
+                port = _selectedPort.value
+                url = fileServer.start(port, _customUrlAlias.value)
+                retries--
+            }
+
             val ipAddresses = fileServer.getAllLocalIpAddresses()
             _localIpAddresses.value = ipAddresses
             
@@ -184,7 +214,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _selectedIp.value = autoDetectedIp
                 autoDetectedIp
             }
-            _serverUrl.value = "http://$ipToUse:${_selectedPort.value}"
+            _serverUrl.value = if (url != null) "http://$ipToUse:$port" else null
+
+            // If we successfully resolved at least one non-loopback IP, we are connected!
+            if (ipAddresses.isNotEmpty() && ipAddresses.any { it != "127.0.0.1" }) {
+                _isNetworkConnected.value = true
+            }
         }
     }
 

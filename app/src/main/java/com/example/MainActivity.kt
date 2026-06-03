@@ -166,7 +166,8 @@ fun MainScreen(
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(innerPadding)
+                .padding(bottom = innerPadding.calculateBottomPadding())
+                .statusBarsPadding()
                 .background(MaterialTheme.colorScheme.background)
         ) {
             // App Header
@@ -1325,6 +1326,43 @@ fun HostSharingPanel(
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 10.dp)
                         )
+
+                        if (isEmulator()) {
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.15f),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 4.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Icon(
+                                            imageVector = Icons.Default.Info,
+                                            contentDescription = "Cloud Sandbox",
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                        Text(
+                                            text = "Running in Cloud Sandbox",
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    Text(
+                                        text = "The generated QR code and HTTP link (${serverUrl ?: "http://10.0.2.15:8817"}) use the virtual emulator's private IP. Because this app is running in the remote cloud preview environment, it cannot be connected directly from your local browser.\n\n" +
+                                                "• To test full device-to-device wireless sharing, build and export the APK of this app, then install it on your actual physical phone.\n" +
+                                                "• When running on a real phone connected to your home Wi-Fi, the QR code and link will generate real local IPs (like 192.168.x.x) letting you share files instantly!",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontSize = 11.sp, lineHeight = 15.sp),
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
 
                         Spacer(modifier = Modifier.height(12.dp))
                         Surface(
@@ -2926,6 +2964,33 @@ fun CloudBackupPanel(
             }
         }
     }
+}
+
+// Global emulator detection helper
+fun isEmulator(): Boolean {
+    val brand = android.os.Build.BRAND
+    val device = android.os.Build.DEVICE
+    val fingerprint = android.os.Build.FINGERPRINT
+    val hardware = android.os.Build.HARDWARE
+    val model = android.os.Build.MODEL
+    val manufacturer = android.os.Build.MANUFACTURER
+    val product = android.os.Build.PRODUCT
+    return (brand.startsWith("generic") && device.startsWith("generic"))
+            || fingerprint.startsWith("generic")
+            || fingerprint.startsWith("unknown")
+            || hardware.contains("goldfish")
+            || hardware.contains("ranchu")
+            || model.contains("google_sdk")
+            || model.contains("Emulator")
+            || model.contains("Android SDK built for x86")
+            || manufacturer.contains("Genymotion")
+            || product.contains("sdk_google")
+            || product.contains("google_sdk")
+            || product.contains("sdk")
+            || product.contains("sdk_x86")
+            || product.contains("vbox86p")
+            || product.contains("emulator")
+            || product.contains("simulator")
 }
 
 // Global copy utility helper

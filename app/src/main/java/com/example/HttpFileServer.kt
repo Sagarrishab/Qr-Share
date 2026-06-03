@@ -1366,29 +1366,25 @@ class HttpServer private constructor(private val addr: InetSocketAddress) {
 
     fun start() {
         running = true
-        try {
-            val ss = java.net.ServerSocket()
-            ss.reuseAddress = true
-            ss.bind(addr)
-            serverSocket = ss
+        val ss = java.net.ServerSocket()
+        ss.reuseAddress = true
+        ss.bind(addr)
+        serverSocket = ss
 
-            val runServer = Runnable {
-                while (running) {
-                    try {
-                        val socket = ss.accept()
-                        val exec = executor ?: java.util.concurrent.Executors.newSingleThreadExecutor()
-                        exec.execute {
-                            handleClient(socket)
-                        }
-                    } catch (e: Exception) {
-                        if (!running) break
+        val runServer = Runnable {
+            while (running) {
+                try {
+                    val socket = ss.accept()
+                    val exec = executor ?: java.util.concurrent.Executors.newSingleThreadExecutor()
+                    exec.execute {
+                        handleClient(socket)
                     }
+                } catch (e: Exception) {
+                    if (!running) break
                 }
             }
-            Thread(runServer, "HttpServer-Thread").start()
-        } catch (e: Exception) {
-            Log.e("HttpServer", "Failed to start ServerSocket on $addr: ${e.message}", e)
         }
+        Thread(runServer, "HttpServer-Thread").start()
     }
 
     fun stop(delay: Int) {
