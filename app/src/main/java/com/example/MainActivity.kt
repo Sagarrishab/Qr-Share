@@ -144,134 +144,281 @@ fun MainScreen(
         }
     }
 
-    Scaffold(
-        bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surfaceContainer,
-                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                tonalElevation = 3.dp,
-                modifier = Modifier.testTag("bottom_nav")
-            ) {
-                val navItemColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
-                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
-                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                NavigationBarItem(
-                    selected = bottomTab == "HOME",
-                    onClick = {
-                        bottomTab = "HOME"
-                        viewModel.setUiMode("HOST")
-                        viewModel.startLocalServer()
-                    },
-                    icon = { Icon(imageVector = Icons.Default.Send, contentDescription = "Share") },
-                    label = { Text("Share") },
-                    colors = navItemColors,
-                    modifier = Modifier.testTag("nav_home")
-                )
-                NavigationBarItem(
-                    selected = bottomTab == "SCAN",
-                    onClick = {
-                        bottomTab = "SCAN"
-                        viewModel.setUiMode("SCAN")
-                        viewModel.stopLocalServer()
-                    },
-                    icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Scan") },
-                    label = { Text("Scan") },
-                    colors = navItemColors,
-                    modifier = Modifier.testTag("nav_scan")
-                )
-                NavigationBarItem(
-                    selected = bottomTab == "GLOBAL",
-                    onClick = { bottomTab = "GLOBAL" },
-                    icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = "Cloud") },
-                    label = { Text("Cloud") },
-                    colors = navItemColors,
-                    modifier = Modifier.testTag("nav_global")
-                )
-                NavigationBarItem(
-                    selected = bottomTab == "MORE",
-                    onClick = { bottomTab = "MORE" },
-                    icon = { Icon(imageVector = Icons.Default.Menu, contentDescription = "More") },
-                    label = { Text("More") },
-                    colors = navItemColors,
-                    modifier = Modifier.testTag("nav_more")
-                )
-            }
-        },
-        modifier = modifier.fillMaxSize()
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(bottom = innerPadding.calculateBottomPadding())
-                .statusBarsPadding()
-                .background(MaterialTheme.colorScheme.background)
-        ) {
-            // App Header
-            AppHeader(
-                onInfoClick = { showAboutAppDialog = true },
-                isNetworkConnected = isNetworkConnected
-            )
+    BoxWithConstraints(modifier = modifier.fillMaxSize()) {
+        val showSideRail = maxWidth >= 600.dp
 
-            Box(modifier = Modifier.fillMaxSize()) {
-                when (bottomTab) {
-                    "HOME" -> {
-                        HostSharingPanel(
-                            serverUrl = serverUrl,
-                            customUrlAlias = customUrlAlias,
-                            hostedFiles = hostedFiles,
-                            localIpAddresses = localIpAddresses,
-                            selectedIp = selectedIp,
-                            selectedPort = selectedPort,
-                            activeServerTransfers = activeServerTransfers,
-                            globalTunnelUrl = globalTunnelUrl,
-                            onUpdateHost = { ip, port -> viewModel.updateHostAddressAndPort(ip, port) },
-                            onAddFiles = { hostFilePickerLauncher.launch("*/*") },
-                            onRemoveShare = { viewModel.removeHostShare(it) }
+        Scaffold(
+            bottomBar = {
+                if (!showSideRail) {
+                    NavigationBar(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                        tonalElevation = 3.dp,
+                        modifier = Modifier.testTag("bottom_nav")
+                    ) {
+                        val navItemColors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+                        NavigationBarItem(
+                            selected = bottomTab == "HOME",
+                            onClick = {
+                                bottomTab = "HOME"
+                            },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Home, 
+                                    contentDescription = "Home"
+                                ) 
+                            },
+                            label = { Text("Home") },
+                            colors = navItemColors,
+                            modifier = Modifier.testTag("nav_home")
+                        )
+                        NavigationBarItem(
+                            selected = bottomTab == "GLOBAL",
+                            onClick = { bottomTab = "GLOBAL" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Share, 
+                                    contentDescription = "Global Share"
+                                ) 
+                            },
+                            label = { Text("Global Share") },
+                            colors = navItemColors,
+                            modifier = Modifier.testTag("nav_global")
+                        )
+                        NavigationBarItem(
+                            selected = bottomTab == "HOW_TO_USE",
+                            onClick = { bottomTab = "HOW_TO_USE" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Info, 
+                                    contentDescription = "How to Use"
+                                ) 
+                            },
+                            label = { Text("How to Use") },
+                            colors = navItemColors,
+                            modifier = Modifier.testTag("nav_how_to_use")
+                        )
+                        NavigationBarItem(
+                            selected = bottomTab == "MORE",
+                            onClick = { bottomTab = "MORE" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Menu, 
+                                    contentDescription = "More"
+                                ) 
+                            },
+                            label = { Text("More") },
+                            colors = navItemColors,
+                            modifier = Modifier.testTag("nav_more")
                         )
                     }
-                    "SCAN" -> {
-                        ScanPanel(
-                            hasPermission = hasCameraPermission,
-                            targetUrl = targetUrl,
-                            status = clientStatus,
-                            preparedFiles = preparedFiles,
-                            onRemovePreparedFile = { viewModel.removePreparedFile(it) },
-                            onClearPreparedFiles = { viewModel.clearPreparedFiles() },
-                            onTransferPreparedFiles = { viewModel.transferPreparedFiles() },
-                            onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                            onQrScanned = { viewModel.onTargetScanned(it) },
-                            onSelectFiles = { clientFilePickerLauncher.launch("*/*") },
-                            onReset = {
-                                viewModel.clearTargetUrl()
-                                viewModel.clearPreparedFiles()
+                }
+            },
+            modifier = Modifier.fillMaxSize()
+        ) { innerPadding ->
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(
+                        bottom = if (showSideRail) 0.dp else innerPadding.calculateBottomPadding()
+                    )
+            ) {
+                if (showSideRail) {
+                    NavigationRail(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                        modifier = Modifier
+                            .fillMaxHeight()
+                            .width(84.dp)
+                            .testTag("side_rail")
+                    ) {
+                        val railItemColors = NavigationRailItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary,
+                            indicatorColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.22f),
+                            unselectedIconColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                            unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f)
+                        )
+                        Spacer(modifier = Modifier.height(24.dp))
+                        NavigationRailItem(
+                            selected = bottomTab == "HOME",
+                            onClick = { bottomTab = "HOME" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Home, 
+                                    contentDescription = "Home"
+                                ) 
+                            },
+                            label = { Text("Home", style = MaterialTheme.typography.labelSmall) },
+                            colors = railItemColors,
+                            modifier = Modifier.testTag("rail_home")
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        NavigationRailItem(
+                            selected = bottomTab == "GLOBAL",
+                            onClick = { bottomTab = "GLOBAL" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Share, 
+                                    contentDescription = "Global Share"
+                                ) 
+                            },
+                            label = { Text("Global", style = MaterialTheme.typography.labelSmall) },
+                            colors = railItemColors,
+                            modifier = Modifier.testTag("rail_global")
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        NavigationRailItem(
+                            selected = bottomTab == "HOW_TO_USE",
+                            onClick = { bottomTab = "HOW_TO_USE" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Info, 
+                                    contentDescription = "How to Use"
+                                ) 
+                            },
+                            label = { Text("How To", style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            colors = railItemColors,
+                            modifier = Modifier.testTag("rail_how_to_use")
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        NavigationRailItem(
+                            selected = bottomTab == "MORE",
+                            onClick = { bottomTab = "MORE" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.Menu, 
+                                    contentDescription = "More"
+                                ) 
+                            },
+                            label = { Text("More", style = MaterialTheme.typography.labelSmall) },
+                            colors = railItemColors,
+                            modifier = Modifier.testTag("rail_more")
+                        )
+                    }
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .statusBarsPadding()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    // App Header
+                    AppHeader(
+                        onInfoClick = { showAboutAppDialog = true },
+                        isNetworkConnected = isNetworkConnected
+                    )
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .then(
+                                if (showSideRail) {
+                                    Modifier.widthIn(max = 900.dp).align(Alignment.CenterHorizontally)
+                                } else {
+                                    Modifier
+                                }
+                            )
+                    ) {
+                        when (bottomTab) {
+                            "HOME" -> {
+                                Column(modifier = Modifier.fillMaxSize()) {
+                                    // Tab Selector
+                                    TabSelector(
+                                        currentMode = uiMode,
+                                        onModeSelected = { mode ->
+                                            viewModel.setUiMode(mode)
+                                            if (mode == "HOST") {
+                                                viewModel.startLocalServer()
+                                            } else {
+                                                viewModel.stopLocalServer()
+                                            }
+                                        }
+                                    )
+
+                                    // Main content
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 16.dp)
+                                    ) {
+                                        when (uiMode) {
+                                            "HOST" -> {
+                                                HostSharingPanel(
+                                                    serverUrl = serverUrl,
+                                                    customUrlAlias = customUrlAlias,
+                                                    hostedFiles = hostedFiles,
+                                                    localIpAddresses = localIpAddresses,
+                                                    selectedIp = selectedIp,
+                                                    selectedPort = selectedPort,
+                                                    activeServerTransfers = activeServerTransfers,
+                                                    globalTunnelUrl = globalTunnelUrl,
+                                                    onUpdateHost = { ip, port -> viewModel.updateHostAddressAndPort(ip, port) },
+                                                    onAddFiles = { hostFilePickerLauncher.launch("*/*") },
+                                                    onRemoveShare = { viewModel.removeHostShare(it) }
+                                                )
+                                            }
+                                            "SCAN" -> {
+                                                ScanPanel(
+                                                    hasPermission = hasCameraPermission,
+                                                    targetUrl = targetUrl,
+                                                    status = clientStatus,
+                                                    preparedFiles = preparedFiles,
+                                                    onRemovePreparedFile = { viewModel.removePreparedFile(it) },
+                                                    onClearPreparedFiles = { viewModel.clearPreparedFiles() },
+                                                    onTransferPreparedFiles = { viewModel.transferPreparedFiles() },
+                                                    onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+                                                    onQrScanned = { viewModel.onTargetScanned(it) },
+                                                    onSelectFiles = { clientFilePickerLauncher.launch("*/*") },
+                                                    onReset = {
+                                                        viewModel.clearTargetUrl()
+                                                        viewModel.clearPreparedFiles()
+                                                    }
+                                                )
+                                            }
+                                            "CLOUD" -> {
+                                                CloudBackupPanel(
+                                                    viewModel = viewModel
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
-                        )
-                    }
-                    "GLOBAL" -> {
-                        GlobalSharePage(
-                            serverUrl = serverUrl,
-                            globalTunnelUrl = globalTunnelUrl,
-                            isGlobalTunnelConnecting = isGlobalTunnelConnecting,
-                            globalTunnelError = globalTunnelError,
-                            onStartGlobalTunnel = { viewModel.startGlobalSharingTunnel() },
-                            onStopGlobalTunnel = { viewModel.stopGlobalSharingTunnel() },
-                            onStartLocalServer = { viewModel.startLocalServer() },
-                            hostedFilesCount = hostedFiles.size,
-                            context = context
-                        )
-                    }
-                    "MORE" -> {
-                        MorePage(
-                            customUrlAlias = customUrlAlias,
-                            connectedDevices = connectedDevices,
-                            transferHistory = transferHistory,
-                            viewModel = viewModel,
-                            context = context
-                        )
+                            "GLOBAL" -> {
+                                GlobalSharePage(
+                                    serverUrl = serverUrl,
+                                    globalTunnelUrl = globalTunnelUrl,
+                                    isGlobalTunnelConnecting = isGlobalTunnelConnecting,
+                                    globalTunnelError = globalTunnelError,
+                                    onStartGlobalTunnel = { viewModel.startGlobalSharingTunnel() },
+                                    onStopGlobalTunnel = { viewModel.stopGlobalSharingTunnel() },
+                                    onStartLocalServer = { viewModel.startLocalServer() },
+                                    hostedFilesCount = hostedFiles.size,
+                                    context = context
+                                )
+                            }
+                            "HOW_TO_USE" -> {
+                                HowToUsePage()
+                            }
+                            "MORE" -> {
+                                MorePage(
+                                    customUrlAlias = customUrlAlias,
+                                    connectedDevices = connectedDevices,
+                                    transferHistory = transferHistory,
+                                    viewModel = viewModel,
+                                    context = context
+                                )
+                            }
+                        }
                     }
                 }
             }

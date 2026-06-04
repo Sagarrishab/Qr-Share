@@ -60,8 +60,8 @@ object GlobalTunnelManager {
             port = 443,
             user = "nokey",
             urlPatterns = listOf(
-                Regex("https?://[a-zA-Z0-9.-]+\\.lhr\\.life"),
-                Regex("[a-zA-Z0-9.-]+\\.lhr\\.life")
+                Regex("https?://[a-zA-Z0-9.-]+\\.(?:lhr\\.life|lhr\\.rocks)"),
+                Regex("[a-zA-Z0-9.-]+\\.(?:lhr\\.life|lhr\\.rocks)")
             )
         ),
         TunnelConfig(
@@ -70,8 +70,8 @@ object GlobalTunnelManager {
             port = 22,
             user = "nokey",
             urlPatterns = listOf(
-                Regex("https?://[a-zA-Z0-9.-]+\\.lhr\\.life"),
-                Regex("[a-zA-Z0-9.-]+\\.lhr\\.life")
+                Regex("https?://[a-zA-Z0-9.-]+\\.(?:lhr\\.life|lhr\\.rocks)"),
+                Regex("[a-zA-Z0-9.-]+\\.(?:lhr\\.life|lhr\\.rocks)")
             )
         ),
         TunnelConfig(
@@ -101,6 +101,23 @@ object GlobalTunnelManager {
                 Log.d("GlobalTunnel", "Executing tunnel config: ${config.serviceName} at ${config.host}:${config.port}")
                 try {
                     val jsch = JSch()
+                    
+                    // Generate and register an in-memory RSA keypair for publickey authentication.
+                    // Most public SSH tunnel hosts (like pinggy and localhost.run) require client signatures
+                    // on publickey auth even for anonymous/public connections.
+                    try {
+                        val privateKeyOS = java.io.ByteArrayOutputStream()
+                        val publicKeyOS = java.io.ByteArrayOutputStream()
+                        val kpair = com.jcraft.jsch.KeyPair.genKeyPair(jsch, com.jcraft.jsch.KeyPair.RSA, 2048)
+                        kpair.writePrivateKey(privateKeyOS)
+                        kpair.writePublicKey(publicKeyOS, "aistudio-secure-tunnel")
+                        jsch.addIdentity("tunnel_session_key", privateKeyOS.toByteArray(), publicKeyOS.toByteArray(), null)
+                        kpair.dispose()
+                        Log.d("GlobalTunnel", "Successfully generated in-memory RSA keypair for SSH publickey auth.")
+                    } catch (keyEx: Exception) {
+                        Log.e("GlobalTunnel", "In-memory RSA key generation failed: ${keyEx.message}")
+                    }
+
                     val hostSession = jsch.getSession(config.user, config.host, config.port)
                     hostSession.setConfig("StrictHostKeyChecking", "no")
                     
@@ -109,18 +126,18 @@ object GlobalTunnelManager {
                     
                     hostSession.connect(12000) // 12s socket connection timeout
                     
-                    // Request remote forwarding: Maps remote gateway's port 80 to device localPort
-                    // This MUST be called after connect() is established to avoid NullPointerException on uninitialized session objects.
-                    // We try empty bind address "" (standard OpenSSH behavior) first, then fallback to "0.0.0.0", then JSch default, using "127.0.0.1" as the local address to prevent IPv6 localhost mismatches.
+                    // Request remote forwarding: Maps remote gateway's port 80 to device localPort.
+                    // We try empty bind address "" first, fallback to "0.0.0.0", then use default.
+                    // We use "127.0.0.1" as the local address to prevent IPv6 localhost mismatches.
                     try {
-                        hostSession.setPortForwardingR("", 80, "localhost", localPort)
+                        hostSession.setPortForwardingR("", 80, "127.0.0.1", localPort)
                     } catch (fe1: Exception) {
                         Log.w("GlobalTunnel", "Failed to bind empty remote host, trying 0.0.0.0: ${fe1.message}")
                         try {
-                            hostSession.setPortForwardingR("0.0.0.0", 80, "localhost", localPort)
+                            hostSession.setPortForwardingR("0.0.0.0", 80, "127.0.0.1", localPort)
                         } catch (fe2: Exception) {
                             Log.w("GlobalTunnel", "Failed to bind 0.0.0.0 remote host, trying default: ${fe2.message}")
-                            hostSession.setPortForwardingR(80, "localhost", localPort)
+                            hostSession.setPortForwardingR(80, "127.0.0.1", localPort)
                         }
                     }
                     
