@@ -111,12 +111,24 @@ object GlobalTunnelManager {
                     
                     // Request remote forwarding: Maps remote gateway's port 80 to device localPort
                     // This MUST be called after connect() is established to avoid NullPointerException on uninitialized session objects.
-                    hostSession.setPortForwardingR(80, "localhost", localPort)
+                    // We try empty bind address "" (standard OpenSSH behavior) first, then fallback to "0.0.0.0", then JSch default, using "127.0.0.1" as the local address to prevent IPv6 localhost mismatches.
+                    try {
+                        hostSession.setPortForwardingR("", 80, "localhost", localPort)
+                    } catch (fe1: Exception) {
+                        Log.w("GlobalTunnel", "Failed to bind empty remote host, trying 0.0.0.0: ${fe1.message}")
+                        try {
+                            hostSession.setPortForwardingR("0.0.0.0", 80, "localhost", localPort)
+                        } catch (fe2: Exception) {
+                            Log.w("GlobalTunnel", "Failed to bind 0.0.0.0 remote host, trying default: ${fe2.message}")
+                            hostSession.setPortForwardingR(80, "localhost", localPort)
+                        }
+                    }
                     
                     session = hostSession
                     Log.d("GlobalTunnel", "Established SSH session for ${config.serviceName}. Opening shell to grab URL...")
 
                     val chan = hostSession.openChannel("shell") as ChannelShell
+                    chan.setPty(true) // We need a pseudo-terminal for them to print the URL sometimes
                     shellChannel = chan
                     
                     val inputStream: InputStream = chan.inputStream
@@ -152,6 +164,22 @@ object GlobalTunnelManager {
                                         success = true
                                         _isConnecting.value = false
                                         Log.i("GlobalTunnel", "TUNNEL ACTIVE! Engine ${config.serviceName} resolved: $foundUrl")
+                                        
+                                        // Start a background drainer so the window buffer doesn't fill up and freeze SSH
+                                        scope.launch(Dispatchers.IO) {
+                                            try {
+                                                val drainBuffer = ByteArray(4096)
+                                                while (chan.isConnected && !chan.isClosed && session === hostSession) {
+                                                    if (inputStream.available() > 0) {
+                                                        inputStream.read(drainBuffer) // discard to prevent blocking
+                                                    } else {
+                                                        Thread.sleep(200)
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                Log.d("GlobalTunnel", "Drainer stopped.")
+                                            }
+                                        }
                                         break
                                     }
                                 }

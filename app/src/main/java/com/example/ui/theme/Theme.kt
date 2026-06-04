@@ -79,7 +79,7 @@ private fun getLightColorScheme(themeColor: String) = lightColorScheme(
 
 @Composable
 fun MyApplicationTheme(
-    themeMode: String = "ALWAYS_DARK",
+    themeMode: String = "SYSTEM",
     themeColor: String = "COSMIC_CYAN",
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,

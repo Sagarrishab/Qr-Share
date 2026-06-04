@@ -14,6 +14,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -145,40 +147,49 @@ fun MainScreen(
     Scaffold(
         bottomBar = {
             NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 8.dp,
+                containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                tonalElevation = 3.dp,
                 modifier = Modifier.testTag("bottom_nav")
             ) {
                 val navItemColors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = MaterialTheme.colorScheme.primary,
-                    selectedTextColor = MaterialTheme.colorScheme.primary,
-                    indicatorColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
-                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                    selectedIconColor = MaterialTheme.colorScheme.onSecondaryContainer,
+                    selectedTextColor = MaterialTheme.colorScheme.onSurface,
+                    indicatorColor = MaterialTheme.colorScheme.secondaryContainer,
+                    unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 NavigationBarItem(
                     selected = bottomTab == "HOME",
-                    onClick = { bottomTab = "HOME" },
-                    icon = { Icon(imageVector = Icons.Default.Home, contentDescription = "Home") },
-                    label = { Text("Home") },
+                    onClick = {
+                        bottomTab = "HOME"
+                        viewModel.setUiMode("HOST")
+                        viewModel.startLocalServer()
+                    },
+                    icon = { Icon(imageVector = Icons.Default.Send, contentDescription = "Share") },
+                    label = { Text("Share") },
                     colors = navItemColors,
                     modifier = Modifier.testTag("nav_home")
                 )
                 NavigationBarItem(
-                    selected = bottomTab == "GLOBAL",
-                    onClick = { bottomTab = "GLOBAL" },
-                    icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Global Share") },
-                    label = { Text("Global Share") },
+                    selected = bottomTab == "SCAN",
+                    onClick = {
+                        bottomTab = "SCAN"
+                        viewModel.setUiMode("SCAN")
+                        viewModel.stopLocalServer()
+                    },
+                    icon = { Icon(imageVector = Icons.Default.Share, contentDescription = "Scan") },
+                    label = { Text("Scan") },
                     colors = navItemColors,
-                    modifier = Modifier.testTag("nav_global")
+                    modifier = Modifier.testTag("nav_scan")
                 )
                 NavigationBarItem(
-                    selected = bottomTab == "HOW_TO_USE",
-                    onClick = { bottomTab = "HOW_TO_USE" },
-                    icon = { Icon(imageVector = Icons.Default.Info, contentDescription = "How to Use") },
-                    label = { Text("How to Use") },
+                    selected = bottomTab == "GLOBAL",
+                    onClick = { bottomTab = "GLOBAL" },
+                    icon = { Icon(imageVector = Icons.Default.Settings, contentDescription = "Cloud") },
+                    label = { Text("Cloud") },
                     colors = navItemColors,
-                    modifier = Modifier.testTag("nav_how_to_use")
+                    modifier = Modifier.testTag("nav_global")
                 )
                 NavigationBarItem(
                     selected = bottomTab == "MORE",
@@ -205,96 +216,63 @@ fun MainScreen(
                 isNetworkConnected = isNetworkConnected
             )
 
-            when (bottomTab) {
-                "HOME" -> {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        // Tab Selector
-                        TabSelector(
-                            currentMode = uiMode,
-                            onModeSelected = { mode ->
-                                viewModel.setUiMode(mode)
-                                if (mode == "HOST") {
-                                    viewModel.startLocalServer()
-                                } else {
-                                    viewModel.stopLocalServer()
-                                }
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (bottomTab) {
+                    "HOME" -> {
+                        HostSharingPanel(
+                            serverUrl = serverUrl,
+                            customUrlAlias = customUrlAlias,
+                            hostedFiles = hostedFiles,
+                            localIpAddresses = localIpAddresses,
+                            selectedIp = selectedIp,
+                            selectedPort = selectedPort,
+                            activeServerTransfers = activeServerTransfers,
+                            globalTunnelUrl = globalTunnelUrl,
+                            onUpdateHost = { ip, port -> viewModel.updateHostAddressAndPort(ip, port) },
+                            onAddFiles = { hostFilePickerLauncher.launch("*/*") },
+                            onRemoveShare = { viewModel.removeHostShare(it) }
+                        )
+                    }
+                    "SCAN" -> {
+                        ScanPanel(
+                            hasPermission = hasCameraPermission,
+                            targetUrl = targetUrl,
+                            status = clientStatus,
+                            preparedFiles = preparedFiles,
+                            onRemovePreparedFile = { viewModel.removePreparedFile(it) },
+                            onClearPreparedFiles = { viewModel.clearPreparedFiles() },
+                            onTransferPreparedFiles = { viewModel.transferPreparedFiles() },
+                            onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
+                            onQrScanned = { viewModel.onTargetScanned(it) },
+                            onSelectFiles = { clientFilePickerLauncher.launch("*/*") },
+                            onReset = {
+                                viewModel.clearTargetUrl()
+                                viewModel.clearPreparedFiles()
                             }
                         )
-
-                        // Main content
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                        ) {
-                            when (uiMode) {
-                                "HOST" -> {
-                                    HostSharingPanel(
-                                        serverUrl = serverUrl,
-                                        customUrlAlias = customUrlAlias,
-                                        hostedFiles = hostedFiles,
-                                        localIpAddresses = localIpAddresses,
-                                        selectedIp = selectedIp,
-                                        selectedPort = selectedPort,
-                                        activeServerTransfers = activeServerTransfers,
-                                        globalTunnelUrl = globalTunnelUrl,
-                                        onUpdateHost = { ip, port -> viewModel.updateHostAddressAndPort(ip, port) },
-                                        onAddFiles = { hostFilePickerLauncher.launch("*/*") },
-                                        onRemoveShare = { viewModel.removeHostShare(it) }
-                                    )
-                                }
-                                "SCAN" -> {
-                                    ScanPanel(
-                                        hasPermission = hasCameraPermission,
-                                        targetUrl = targetUrl,
-                                        status = clientStatus,
-                                        preparedFiles = preparedFiles,
-                                        onRemovePreparedFile = { viewModel.removePreparedFile(it) },
-                                        onClearPreparedFiles = { viewModel.clearPreparedFiles() },
-                                        onTransferPreparedFiles = { viewModel.transferPreparedFiles() },
-                                        onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
-                                        onQrScanned = { viewModel.onTargetScanned(it) },
-                                        onSelectFiles = { clientFilePickerLauncher.launch("*/*") },
-                                        onReset = {
-                                            viewModel.clearTargetUrl()
-                                            viewModel.clearPreparedFiles()
-                                        }
-                                    )
-                                }
-                                "CLOUD" -> {
-                                    CloudBackupPanel(
-                                        viewModel = viewModel
-                                    )
-                                }
-                            }
-                        }
                     }
-                }
-                "GLOBAL" -> {
-                    GlobalSharePage(
-                        serverUrl = serverUrl,
-                        globalTunnelUrl = globalTunnelUrl,
-                        isGlobalTunnelConnecting = isGlobalTunnelConnecting,
-                        globalTunnelError = globalTunnelError,
-                        onStartGlobalTunnel = { viewModel.startGlobalSharingTunnel() },
-                        onStopGlobalTunnel = { viewModel.stopGlobalSharingTunnel() },
-                        onStartLocalServer = { viewModel.startLocalServer() },
-                        hostedFilesCount = hostedFiles.size,
-                        context = context
-                    )
-                }
-                "HOW_TO_USE" -> {
-                    HowToUsePage()
-                }
-                "MORE" -> {
-                    MorePage(
-                        customUrlAlias = customUrlAlias,
-                        connectedDevices = connectedDevices,
-                        transferHistory = transferHistory,
-                        viewModel = viewModel,
-                        context = context
-                    )
+                    "GLOBAL" -> {
+                        GlobalSharePage(
+                            serverUrl = serverUrl,
+                            globalTunnelUrl = globalTunnelUrl,
+                            isGlobalTunnelConnecting = isGlobalTunnelConnecting,
+                            globalTunnelError = globalTunnelError,
+                            onStartGlobalTunnel = { viewModel.startGlobalSharingTunnel() },
+                            onStopGlobalTunnel = { viewModel.stopGlobalSharingTunnel() },
+                            onStartLocalServer = { viewModel.startLocalServer() },
+                            hostedFilesCount = hostedFiles.size,
+                            context = context
+                        )
+                    }
+                    "MORE" -> {
+                        MorePage(
+                            customUrlAlias = customUrlAlias,
+                            connectedDevices = connectedDevices,
+                            transferHistory = transferHistory,
+                            viewModel = viewModel,
+                            context = context
+                        )
+                    }
                 }
             }
         }
@@ -1634,190 +1612,49 @@ fun HostSharingPanel(
 
                         Spacer(modifier = Modifier.height(12.dp))
 
-                        // Display both addresses
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        // Display active address only to save space
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.background,
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primaryContainer),
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            // Short URL option
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.background,
-                                border = BorderStroke(1.dp, if (qrAddressType == "MDNS") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
-                                modifier = Modifier.fillMaxWidth()
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "Host URL Alias",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.primary
-                                            )
-                                            if (qrAddressType == "MDNS") {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                                    modifier = Modifier.padding(vertical = 2.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "QR Active",
-                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-                                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Text(
-                                            text = shortUrl,
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Button(
-                                        onClick = {
-                                            copyToClipboard(context, shortUrl)
-                                            Toast.makeText(context, "Short URL Copied!", Toast.LENGTH_SHORT).show()
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = when(qrAddressType) {
+                                            "MDNS" -> "Custom Alias URL"
+                                            "GLOBAL" -> "Global Link"
+                                            else -> "IP Address URL"
                                         },
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), contentColor = MaterialTheme.colorScheme.primary),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text("Copy", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                    }
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = qrUrl,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
                                 }
-                            }
-
-                            // Raw IP URL alternative
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = MaterialTheme.colorScheme.background,
-                                border = BorderStroke(1.dp, if (qrAddressType == "IP") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Button(
+                                    onClick = {
+                                        copyToClipboard(context, qrUrl)
+                                        Toast.makeText(context, "URL Copied!", Toast.LENGTH_SHORT).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), contentColor = MaterialTheme.colorScheme.primary),
+                                    shape = RoundedCornerShape(8.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                                 ) {
-                                    Column(modifier = Modifier.weight(1f)) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Text(
-                                                text = "Host IP Address",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.secondary
-                                            )
-                                            if (qrAddressType == "IP") {
-                                                Spacer(modifier = Modifier.width(6.dp))
-                                                Surface(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                                    modifier = Modifier.padding(vertical = 2.dp)
-                                                ) {
-                                                    Text(
-                                                        text = "QR Active",
-                                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-                                                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                        Text(
-                                            text = serverUrl ?: "",
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                            color = MaterialTheme.colorScheme.onSurface,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Button(
-                                        onClick = {
-                                            copyToClipboard(context, serverUrl)
-                                            Toast.makeText(context, "IP URL Copied!", Toast.LENGTH_SHORT).show()
-                                        },
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary.copy(alpha = 0.15f), contentColor = MaterialTheme.colorScheme.secondary),
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                    ) {
-                                        Text("Copy", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                    }
-                                }
-                            }
-
-                            // Global Tunnel URL alternative (Only show if tunnel is running)
-                            if (globalTunnelUrl != null) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = MaterialTheme.colorScheme.background,
-                                    border = BorderStroke(1.dp, if (qrAddressType == "GLOBAL") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                                Text(
-                                                    text = "Global Sharing URL",
-                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = MaterialTheme.colorScheme.primary
-                                                )
-                                                if (qrAddressType == "GLOBAL") {
-                                                    Spacer(modifier = Modifier.width(6.dp))
-                                                    Surface(
-                                                        shape = RoundedCornerShape(4.dp),
-                                                        color = MaterialTheme.colorScheme.primaryContainer,
-                                                        modifier = Modifier.padding(vertical = 2.dp)
-                                                    ) {
-                                                        Text(
-                                                            text = "QR Active",
-                                                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 9.sp),
-                                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                            Text(
-                                                text = globalTunnelUrl,
-                                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                                                color = MaterialTheme.colorScheme.onSurface,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis
-                                            )
-                                        }
-                                        Spacer(modifier = Modifier.width(8.dp))
-                                        Button(
-                                            onClick = {
-                                                copyToClipboard(context, globalTunnelUrl)
-                                                Toast.makeText(context, "Global URL Copied!", Toast.LENGTH_SHORT).show()
-                                            },
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), contentColor = MaterialTheme.colorScheme.primary),
-                                            shape = RoundedCornerShape(8.dp),
-                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                                        ) {
-                                            Text("Copy", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
-                                        }
-                                    }
+                                    Text("Copy", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
                                 }
                             }
                         }
@@ -2640,16 +2477,78 @@ fun ScanPanel(
                         .padding(16.dp),
                     contentAlignment = Alignment.BottomCenter
                 ) {
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.7f),
-                        shape = RoundedCornerShape(20.dp),
+                    var showManualEntry by remember { mutableStateOf(false) }
+                    
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
                         modifier = Modifier.padding(bottom = 24.dp)
                     ) {
-                        Text(
-                            text = "Point camera at QR on Windows screen",
-                            color = Color.White,
-                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(16.dp),
+                            modifier = Modifier.padding(bottom = 16.dp)
+                        ) {
+                            Text(
+                                text = "Point camera at Host's QR Code",
+                                color = Color.White,
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold),
+                                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                            )
+                        }
+                        
+                        Button(
+                            onClick = { showManualEntry = true },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = "Enter Host IP Manually",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold)
+                            )
+                        }
+                    }
+                    
+                    if (showManualEntry) {
+                        var manualUrl by remember { mutableStateOf("") }
+                        AlertDialog(
+                            onDismissRequest = { showManualEntry = false },
+                            title = { Text("Enter PC IP Address") },
+                            text = {
+                                Column {
+                                    Text("Enter the IP address or URL shown on your PC (e.g. 192.168.1.5:8080 or https://...)", style = MaterialTheme.typography.bodySmall)
+                                    Spacer(modifier = Modifier.height(12.dp))
+                                    OutlinedTextField(
+                                        value = manualUrl,
+                                        onValueChange = { manualUrl = it },
+                                        placeholder = { Text("192.168...") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth(),
+                                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                                    )
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    showManualEntry = false
+                                    if (manualUrl.isNotBlank()) {
+                                        var finalUrl = manualUrl.trim()
+                                        if (!finalUrl.startsWith("http://") && !finalUrl.startsWith("https://")) {
+                                            finalUrl = "http://$finalUrl"
+                                        }
+                                        onQrScanned(finalUrl)
+                                    }
+                                }) {
+                                    Text("Connect")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showManualEntry = false }) {
+                                    Text("Cancel")
+                                }
+                            }
                         )
                     }
                 }
