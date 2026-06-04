@@ -236,7 +236,7 @@ class HttpFileServer(
             }
 
             val clientIp = exchange.remoteAddress.address.hostAddress ?: ""
-            val userAgent = exchange.requestHeaders["User-Agent"]?.firstOrNull()?.toString() ?: ""
+            val userAgent = exchange.requestHeaders["user-agent"] ?: ""
             registerActiveClient(clientIp, userAgent)
             val response = getHtmlDashboard()
             val bytes = response.toByteArray(Charsets.UTF_8)
@@ -254,7 +254,7 @@ class HttpFileServer(
             }
 
             val clientIp = exchange.remoteAddress.address.hostAddress ?: ""
-            val userAgent = exchange.requestHeaders["User-Agent"]?.firstOrNull()?.toString() ?: ""
+            val userAgent = exchange.requestHeaders["user-agent"] ?: ""
             registerActiveClient(clientIp, userAgent)
             // Convert to a clean JSON array
             val jsonBuilder = StringBuilder("[")
@@ -284,7 +284,7 @@ class HttpFileServer(
             }
 
             val clientIp = exchange.remoteAddress.address.hostAddress ?: ""
-            val userAgent = exchange.requestHeaders["User-Agent"]?.firstOrNull()?.toString() ?: ""
+            val userAgent = exchange.requestHeaders["user-agent"] ?: ""
             registerActiveClient(clientIp, userAgent)
 
             val query = exchange.requestURI.query ?: ""
@@ -356,7 +356,7 @@ class HttpFileServer(
             }
 
             val clientIp = exchange.remoteAddress.address.hostAddress ?: ""
-            val userAgent = exchange.requestHeaders["User-Agent"]?.firstOrNull()?.toString() ?: ""
+            val userAgent = exchange.requestHeaders["user-agent"] ?: ""
             registerActiveClient(clientIp, userAgent)
 
             val query = exchange.requestURI.query ?: ""

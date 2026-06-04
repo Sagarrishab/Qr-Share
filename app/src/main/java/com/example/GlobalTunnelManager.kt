@@ -136,8 +136,13 @@ object GlobalTunnelManager {
                         try {
                             hostSession.setPortForwardingR("0.0.0.0", 80, "127.0.0.1", localPort)
                         } catch (fe2: Exception) {
-                            Log.w("GlobalTunnel", "Failed to bind 0.0.0.0 remote host, trying default: ${fe2.message}")
-                            hostSession.setPortForwardingR(80, "127.0.0.1", localPort)
+                            Log.w("GlobalTunnel", "Failed to bind 0.0.0.0 remote host, trying *: ${fe2.message}")
+                            try {
+                                hostSession.setPortForwardingR("*", 80, "127.0.0.1", localPort)
+                            } catch (fe3: Exception) {
+                                Log.w("GlobalTunnel", "Failed to bind * remote host, trying default: ${fe3.message}")
+                                hostSession.setPortForwardingR(80, "127.0.0.1", localPort)
+                            }
                         }
                     }
                     

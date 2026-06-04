@@ -61,14 +61,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         override fun onAvailable(network: Network) {
             val capabilities = connectivityManager.getNetworkCapabilities(network)
             _isNetworkConnected.value = isCurrentlyConnected(capabilities)
+            refreshNetworkAddresses()
         }
 
         override fun onLost(network: Network) {
             _isNetworkConnected.value = checkInitialNetworkStatus()
+            refreshNetworkAddresses()
         }
 
         override fun onCapabilitiesChanged(network: Network, networkCapabilities: NetworkCapabilities) {
             _isNetworkConnected.value = isCurrentlyConnected(networkCapabilities)
+            refreshNetworkAddresses()
         }
     }
 
@@ -236,6 +239,32 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _serverUrl.value = if (url != null) "http://$ipToUse:$port" else null
 
             // If we successfully resolved at least one non-loopback IP, we are connected!
+            if (ipAddresses.isNotEmpty() && ipAddresses.any { it != "127.0.0.1" }) {
+                _isNetworkConnected.value = true
+            }
+        }
+    }
+
+    fun refreshNetworkAddresses() {
+        viewModelScope.launch(Dispatchers.IO) {
+            // A small delay ensures the OS has completely transitioned network interfaces
+            kotlinx.coroutines.delay(600)
+            
+            val ipAddresses = fileServer.getAllLocalIpAddresses()
+            _localIpAddresses.value = ipAddresses
+            
+            val lastSelectedIp = _selectedIp.value
+            val ipToUse = if (lastSelectedIp != "127.0.0.1" && lastSelectedIp in ipAddresses) {
+                lastSelectedIp
+            } else {
+                val autoDetectedIp = fileServer.getLocalIpAddress()
+                _selectedIp.value = autoDetectedIp
+                autoDetectedIp
+            }
+            
+            val port = _selectedPort.value
+            _serverUrl.value = if (fileServer.isRunning()) "http://$ipToUse:$port" else null
+            
             if (ipAddresses.isNotEmpty() && ipAddresses.any { it != "127.0.0.1" }) {
                 _isNetworkConnected.value = true
             }
