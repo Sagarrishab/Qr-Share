@@ -188,7 +188,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
 
-    private val _githubRepo = MutableStateFlow(prefs.getString("github_updater_repo", "rishabsaini893/QR-File-Share") ?: "rishabsaini893/QR-File-Share")
+    private val _githubRepo = MutableStateFlow(prefs.getString("github_updater_repo", "Sagarrishab/Qr-Share") ?: "Sagarrishab/Qr-Share")
     val githubRepo: StateFlow<String> = _githubRepo.asStateFlow()
 
     // Real-time track of connected device clients
@@ -767,7 +767,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         _updateState.value = UpdateState.NoUpdate
                     }
                 } else if (rc == 404) {
-                    _updateState.value = UpdateState.Error("No release found details (404). Check user/repo.")
+                    _updateState.value = UpdateState.Error("No releases found or repository is private (404). Please publish a release and make your GitHub repository public.")
                 } else {
                     _updateState.value = UpdateState.Error("Server returned error code: $rc")
                 }
@@ -837,7 +837,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _updateState.value = UpdateState.UpdateAvailable(
             version = "v2.0.0-Demo",
             notes = "This is a simulated sandbox test release to verify beautiful downloading and installation states!\n\nAdded details:\n• Fast Wi-Fi lock capability\n• Complete layout fix with spaced label alignments\n• Real-time network transition handlers",
-            downloadUrl = "https://github.com/rishabsaini893/QR-File-Share/releases/download/v1.0/app-debug.apk" // Fallback fallback release download or mock
+            downloadUrl = "https://github.com/Sagarrishab/Qr-Share/releases/download/v1.1.0/app-release.apk" // Fallback release download
         )
     }
 
