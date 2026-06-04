@@ -179,6 +179,19 @@ fun MainScreen(
                             modifier = Modifier.testTag("nav_home")
                         )
                         NavigationBarItem(
+                            selected = bottomTab == "RECEIVE_PC",
+                            onClick = { bottomTab = "RECEIVE_PC" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow, 
+                                    contentDescription = "Receive from PC"
+                                ) 
+                            },
+                            label = { Text("PC Receive", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            colors = navItemColors,
+                            modifier = Modifier.testTag("nav_receive_pc")
+                        )
+                        NavigationBarItem(
                             selected = bottomTab == "GLOBAL",
                             onClick = { bottomTab = "GLOBAL" },
                             icon = { 
@@ -257,6 +270,20 @@ fun MainScreen(
                             label = { Text("Home", style = MaterialTheme.typography.labelSmall) },
                             colors = railItemColors,
                             modifier = Modifier.testTag("rail_home")
+                        )
+                        Spacer(modifier = Modifier.height(16.dp))
+                        NavigationRailItem(
+                            selected = bottomTab == "RECEIVE_PC",
+                            onClick = { bottomTab = "RECEIVE_PC" },
+                            icon = { 
+                                Icon(
+                                    imageVector = Icons.Default.PlayArrow, 
+                                    contentDescription = "Receive from PC"
+                                ) 
+                            },
+                            label = { Text("PC Receive", style = MaterialTheme.typography.labelSmall, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            colors = railItemColors,
+                            modifier = Modifier.testTag("rail_receive_pc")
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         NavigationRailItem(
@@ -392,6 +419,13 @@ fun MainScreen(
                                         }
                                     }
                                 }
+                            }
+                            "RECEIVE_PC" -> {
+                                ReceiveFromPcPage(
+                                    viewModel = viewModel,
+                                    context = context,
+                                    transferHistory = transferHistory
+                                )
                             }
                             "GLOBAL" -> {
                                 GlobalSharePage(
@@ -4424,5 +4458,508 @@ fun AppAboutDialog(
             }
         }
     )
+}
+
+// Reusable PC file opening helper launcher using ACTION_VIEW intent
+fun openFileWithSystemViewer(context: Context, filePath: String) {
+    val file = File(filePath)
+    if (!file.exists()) {
+        Toast.makeText(context, "File does not exist on disk", Toast.LENGTH_SHORT).show()
+        return
+    }
+    try {
+        val uri = FileProvider.getUriForFile(
+            context,
+            "${context.packageName}.fileprovider",
+            file
+        )
+        val mime = context.contentResolver.getType(uri) ?: "*/*"
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, mime)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        // Fallback to chooser share
+        try {
+            val uri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.fileprovider",
+                file
+            )
+            val intent = Intent(Intent.ACTION_SEND).apply {
+                type = "*/*"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            context.startActivity(Intent.createChooser(intent, "Share/Open File"))
+        } catch (ex: Exception) {
+            Toast.makeText(context, "Could not open file: ${ex.message}", Toast.LENGTH_SHORT).show()
+        }
+    }
+}
+
+@Composable
+fun ReceiveFromPcPage(
+    viewModel: MainViewModel,
+    context: Context,
+    transferHistory: List<TransferRecord>
+) {
+    val serverUrl by viewModel.serverUrl.collectAsState()
+    val localIpAddresses by viewModel.localIpAddresses.collectAsState()
+    val selectedPort by viewModel.selectedPort.collectAsState()
+    val customUrlAlias by viewModel.customUrlAlias.collectAsState()
+
+    // Filter incoming files from history
+    val receivedFiles = remember(transferHistory) {
+        transferHistory.filter { it.direction == "INCOMING" }
+    }
+
+    var hasCameraPermission by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(
+                context,
+                Manifest.permission.CAMERA
+            ) == PackageManager.PERMISSION_GRANTED
+        )
+    }
+
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        hasCameraPermission = isGranted
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        // Page Header
+        item {
+            Column {
+                Text(
+                    text = "Receive from PC",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.ExtraBold),
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.testTag("receive_pc_header")
+                )
+                Text(
+                    text = "High-speed local connection to receive and browse files from your computer.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        // Active Status Card with Activation CTA
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Web Connection Server Status",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(if (serverUrl != null) Color(0xFF10B981) else Color(0xFFEF4444))
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = if (serverUrl != null) "ACTIVE • PC can connect now" else "OFFLINE • PC cannot connect",
+                                    style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (serverUrl != null) Color(0xFF10B981) else Color(0xFFEF4444)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                        if (serverUrl == null) {
+                            Button(
+                                onClick = {
+                                    viewModel.setUiMode("HOST")
+                                    viewModel.startLocalServer()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Text("Turn On", style = MaterialTheme.typography.labelMedium)
+                            }
+                        } else {
+                            FilledTonalButton(
+                                onClick = {
+                                    viewModel.stopLocalServer()
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                            ) {
+                                Text("Turn Off", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Live Connection Information & QR
+        if (serverUrl != null) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "Access Hub Live Link",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Text(
+                            text = "Type this web address into your Windows or Mac internet browser (e.g., Google Chrome, Edge, Safari):",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.align(Alignment.Start)
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        val primaryIp = localIpAddresses.firstOrNull { it != "127.0.0.1" } ?: "127.0.0.1"
+                        val qrUrl = "http://$primaryIp:$selectedPort"
+                        val shortUrl = "http://$customUrlAlias.local:$selectedPort"
+
+                        // Live Links Display Box
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            UrlDisplayRow(label = "Primary Access Web Address", value = shortUrl, context = context)
+                            UrlDisplayRow(label = "Alternative Raw IP Address", value = qrUrl, context = context)
+                        }
+
+                        Spacer(modifier = Modifier.height(16.dp))
+
+                        // QR Code generator drawing
+                        val qrBitmap = remember(qrUrl) {
+                            QrCodeGenerator.generateQrCode(qrUrl, 450, 450)
+                        }
+                        Box(
+                            modifier = Modifier
+                                .size(170.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White)
+                                .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f), RoundedCornerShape(12.dp))
+                                .padding(12.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (qrBitmap != null) {
+                                Image(
+                                    bitmap = qrBitmap.asImageBitmap(),
+                                    contentDescription = "Access Link QR Space",
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Scan this QR from another device to connect instantly",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+        }
+
+        // Pull Files Client Section
+        item {
+            var showManualConnectDialog by remember { mutableStateOf(false) }
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Or pull files from PC (Self-Connect Scan)",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                    )
+                    Text(
+                        text = "If your computer is hosting the sharing space, you can scan the computer screen's QR code or enter its IP address below to connect and pull files from the computer.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.setUiMode("SCAN")
+                                if (!hasCameraPermission) {
+                                    cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                                }
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Scan QR Code")
+                        }
+
+                        FilledTonalButton(
+                            onClick = { showManualConnectDialog = true },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.weight(1.3f)
+                        ) {
+                            Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Manual IP Entry")
+                        }
+                    }
+                }
+            }
+
+            if (showManualConnectDialog) {
+                var manualHostIp by remember { mutableStateOf("") }
+                AlertDialog(
+                    onDismissRequest = { showManualConnectDialog = false },
+                    title = { Text("Connect to Host Space") },
+                    text = {
+                        Column {
+                            Text("Enter the sharing web link or IP address configured on the computer or other hosting device (e.g. 192.168.1.100:8817):", style = MaterialTheme.typography.bodySmall)
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = manualHostIp,
+                                onValueChange = { manualHostIp = it },
+                                placeholder = { Text("192.168.1.100:8817") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri)
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            showManualConnectDialog = false
+                            if (manualHostIp.isNotBlank()) {
+                                var validated = manualHostIp.trim()
+                                if (!validated.startsWith("http://") && !validated.startsWith("https://")) {
+                                    validated = "http://$validated"
+                                }
+                                viewModel.setUiMode("SCAN")
+                                viewModel.onTargetScanned(validated)
+                            }
+                        }) {
+                            Text("Connect")
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showManualConnectDialog = false }) {
+                            Text("Cancel")
+                        }
+                    }
+                )
+            }
+        }
+
+        // Received Files List Section
+        item {
+            Text(
+                text = "Recently Received Files (${receivedFiles.size})",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.padding(top = 8.dp)
+            )
+        }
+
+        if (receivedFiles.isEmpty()) {
+            item {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "No files received from PC yet. Open the link on your computer and upload files to see them listed here instantly!",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(horizontal = 24.dp)
+                    )
+                }
+            }
+        } else {
+            items(receivedFiles) { record ->
+                ReceivedRecordRow(record = record, context = context, viewModel = viewModel)
+            }
+        }
+    }
+}
+
+@Composable
+fun UrlDisplayRow(
+    label: String,
+    value: String,
+    context: Context
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f))
+            .border(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.08f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = label, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(
+                text = value,
+                style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        IconButton(
+            onClick = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+                if (clipboard != null) {
+                    val clip = android.content.ClipData.newPlainText("PC Link Address", value)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(context, "Link Copied!", Toast.LENGTH_SHORT).show()
+                }
+            },
+            modifier = Modifier.size(36.dp)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Share,
+                contentDescription = "Copy address",
+                modifier = Modifier.size(16.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+    }
+}
+
+@Composable
+fun ReceivedRecordRow(
+    record: TransferRecord,
+    context: Context,
+    viewModel: MainViewModel
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.1f)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(8.dp))
+                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.PlayArrow,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = record.fileName,
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = formatBytesHelper(record.fileSize),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = "•",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Text(
+                        text = record.peerIp,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Button(
+                onClick = { openFileWithSystemViewer(context, record.filePath) },
+                shape = RoundedCornerShape(8.dp),
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                modifier = Modifier.height(34.dp)
+            ) {
+                Text("Open", style = MaterialTheme.typography.labelSmall)
+            }
+        }
+    }
+}
+
+fun formatBytesHelper(bytes: Long): String {
+    if (bytes <= 0) return "0 B"
+    val k = 1024L
+    val sizes = arrayOf("B", "KB", "MB", "GB", "TB")
+    val i = (Math.log(bytes.toDouble()) / Math.log(k.toDouble())).toInt()
+    val value = bytes.toDouble() / Math.pow(k.toDouble(), i.toDouble())
+    return String.format("%.1f %s", value, sizes[i])
 }
 

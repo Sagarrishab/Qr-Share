@@ -45,7 +45,7 @@ class HttpFileServer(
     private val onIncomingFile: (File, String, String) -> Unit // (file, originalName, senderIp)
 ) {
     private var server: HttpServer? = null
-    private val executor = Executors.newFixedThreadPool(4)
+    private val executor = Executors.newCachedThreadPool()
     val sharedFiles = mutableListOf<OutgoingShare>()
     var currentPort: Int = 8080
         private set
@@ -199,16 +199,17 @@ class HttpFileServer(
     }
 
     fun getAllLocalIpAddresses(): List<String> {
-        val list = mutableListOf<String>()
+        val list = mutableListOf<Pair<String, String>>() // Pair(IP, InterfaceName)
         try {
             val interfaces = NetworkInterface.getNetworkInterfaces()
             for (networkInterface in interfaces) {
+                val name = networkInterface.name?.lowercase() ?: ""
                 val addresses = networkInterface.inetAddresses
                 for (inetAddress in addresses) {
                     if (!inetAddress.isLoopbackAddress && inetAddress is Inet4Address) {
                         val ip = inetAddress.hostAddress
                         if (ip != null) {
-                            list.add(ip)
+                            list.add(Pair(ip, name))
                         }
                     }
                 }
@@ -216,15 +217,30 @@ class HttpFileServer(
         } catch (ex: Exception) {
             Log.e("HttpFileServer", "Error finding local IP addresses", ex)
         }
-        val sortedList = list.sortedWith(compareByDescending { ip ->
-            when {
-                ip.startsWith("192.168.") -> 4
-                ip.startsWith("172.") -> 3
-                ip.startsWith("10.") -> 2
-                else -> 1
-            }
-        })
+        
+        val sortedList = list.sortedWith { a, b ->
+            val priorityA = getInterfaceAndIpPriority(a.first, a.second)
+            val priorityB = getInterfaceAndIpPriority(b.first, b.second)
+            priorityB.compareTo(priorityA) // descending order
+        }.map { it.first }
+        
         return if (sortedList.isEmpty()) listOf("127.0.0.1") else sortedList
+    }
+
+    private fun getInterfaceAndIpPriority(ip: String, interfaceName: String): Int {
+        var score = 0
+        // Prioritize Wi-Fi and Ethernet interfaces heavily for local sharing
+        if (interfaceName.contains("wlan") || interfaceName.contains("eth") || interfaceName.contains("ap") || interfaceName.contains("p2p")) {
+            score += 100
+        }
+        // Sub-priority based on subnet prefixes
+        when {
+            ip.startsWith("192.168.") -> score += 10
+            ip.startsWith("172.") -> score += 8
+            ip.startsWith("10.") -> score += 5
+            else -> score += 1
+        }
+        return score
     }
 
     // Handlers
@@ -1526,23 +1542,38 @@ class HttpFileServer(
                 let isUploading = false;
 
                 function handleFiles(files) {
-                    if (isUploading) return;
                     if (files.length === 0) return;
                     for (let i = 0; i < files.length; i++) {
-                        stagedFiles.push(files[i]);
+                        const fileObj = files[i];
+                        const alreadyStaged = stagedFiles.some(f => f.file.name === fileObj.name && f.file.size === fileObj.size);
+                        if (!alreadyStaged) {
+                            stagedFiles.push({
+                                file: fileObj,
+                                progress: 0,
+                                status: 'pending',
+                                xhr: null
+                            });
+                        }
                     }
                     fileInput.value = '';
                     renderStagedFiles();
                 }
 
                 function removeStagedFile(index) {
-                    if (isUploading) return;
+                    const item = stagedFiles[index];
+                    if (item && item.xhr) {
+                        item.xhr.abort();
+                    }
                     stagedFiles.splice(index, 1);
                     renderStagedFiles();
                 }
 
                 function clearStagedFiles() {
-                    if (isUploading) return;
+                    stagedFiles.forEach(item => {
+                        if (item.xhr) {
+                            item.xhr.abort();
+                        }
+                    });
                     stagedFiles = [];
                     renderStagedFiles();
                 }
@@ -1561,105 +1592,213 @@ class HttpFileServer(
                     stagedList.innerHTML = '';
                     
                     let totalSize = 0;
-                    stagedFiles.forEach((file, idx) => {
-                        totalSize += file.size;
-                        const nameParts = file.name.split('.');
+                    let successCount = 0;
+                    let uploadingCount = 0;
+                    
+                    stagedFiles.forEach((staged, idx) => {
+                        totalSize += staged.file.size;
+                        if (staged.status === 'success') successCount++;
+                        if (staged.status === 'uploading') uploadingCount++;
+                        
+                        const nameParts = staged.file.name.split('.');
                         const fileExt = nameParts.length > 1 ? nameParts.pop().toUpperCase().slice(0, 4) : 'FILE';
                         
                         const item = document.createElement('div');
                         item.className = 'staged-item';
-                        item.innerHTML = '<div style="display: flex; align-items: center; gap: 10px; width: 85%;">' +
-                            '<span class="file-type-badge">' + fileExt + '</span>' +
-                            '<div style="display: flex; flex-direction: column; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: calc(100% - 42px);">' +
-                                '<span class="staged-name" title="' + escapeHtml(file.name) + '">' + escapeHtml(file.name) + '</span>' +
-                                '<span class="staged-size">' + formatBytes(file.size) + '</span>' +
+                        item.style.display = 'flex';
+                        item.style.flexDirection = 'column';
+                        item.style.alignItems = 'stretch';
+                        item.style.gap = '6px';
+                        
+                        let statusColor = 'var(--text-secondary)';
+                        let statusText = formatBytes(staged.file.size);
+                        if (staged.status === 'uploading') {
+                            statusColor = 'var(--accent-orange)';
+                            statusText = 'Uploading: ' + staged.progress + '%';
+                        } else if (staged.status === 'success') {
+                            statusColor = 'var(--accent-green)';
+                            statusText = 'Completed';
+                        } else if (staged.status === 'failed') {
+                            statusColor = 'var(--accent-red)';
+                            statusText = 'Failed';
+                        }
+                        
+                        let itemHtml = '<div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">' +
+                            '<div style="display: flex; align-items: center; gap: 10px; width: 85%; overflow: hidden;">' +
+                                '<span class="file-type-badge">' + fileExt + '</span>' +
+                                '<div style="display: flex; flex-direction: column; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; width: calc(100% - 50px);">' +
+                                    '<span class="staged-name" title="' + escapeHtml(staged.file.name) + '">' + escapeHtml(staged.file.name) + '</span>' +
+                                    '<span class="staged-size" style="color: ' + statusColor + '; font-weight: 600; font-size: 0.78rem;">' + statusText + '</span>' +
+                                '</div>' +
                             '</div>' +
-                            '</div>' +
-                            '<button class="remove-staged-btn" onclick="removeStagedFile(' + idx + ')">✕</button>';
+                            '<button class="remove-staged-btn" onclick="removeStagedFile(' + idx + ')">✕</button>' +
+                            '</div>';
+                            
+                        if (staged.status === 'uploading') {
+                            itemHtml += '<div class="progress-bar" style="height: 5px; border-radius: 3px; background: rgba(255,255,255,0.06); margin-top: 2px;">' +
+                                '<div class="progress-fill" style="width: ' + staged.progress + '%; height: 100%; border-radius: 3px; background: var(--accent-orange); transition: width 0.15s ease;"></div>' +
+                                '</div>';
+                        } else if (staged.status === 'success') {
+                            itemHtml += '<div class="progress-bar" style="height: 5px; border-radius: 3px; background: rgba(16, 185, 129, 0.1); margin-top: 2px;">' +
+                                '<div class="progress-fill" style="width: 100%; height: 100%; border-radius: 3px; background: var(--accent-green);"></div>' +
+                                '</div>';
+                        }
+                        
+                        item.innerHTML = itemHtml;
                         stagedList.appendChild(item);
                     });
                     
+                    const activeUploadsExist = stagedFiles.some(f => f.status === 'uploading');
+                    const hasPending = stagedFiles.some(f => f.status === 'pending');
+                    
+                    let shareButtonHtml = '';
+                    if (hasPending) {
+                        shareButtonHtml = '<button class="btn" style="width: 100%; display: flex; justify-content: center; background: var(--accent-orange); border: none; font-family: inherit; box-shadow: 0 4px 12px rgba(249, 115, 22, 0.2);" onclick="shareStagedFiles()">' +
+                            '<svg style="width:16px;height:16px;fill:currentColor;margin-right:6px" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>' +
+                            'Upload ' + stagedFiles.filter(f => f.status === 'pending').length + ' file(s) P2P' +
+                            '</button>';
+                    } else if (activeUploadsExist) {
+                        shareButtonHtml = '<button class="btn" style="width: 100%; display: flex; justify-content: center; background: var(--border-color); border: none; font-family: inherit; cursor: not-allowed; color: var(--text-secondary);" disabled>' +
+                            '<span class="pulse-indicator" style="margin-right: 8px; vertical-align: middle;"></span>' +
+                            'Uploading concurrently...' +
+                            '</button>';
+                    } else {
+                        shareButtonHtml = '<button class="btn" style="width: 100%; display: flex; justify-content: center; background: var(--accent-teal); border: none; font-family: inherit;" onclick="clearStagedFiles()">' +
+                            'All Transferred! Clear List' +
+                            '</button>';
+                    }
+                    
                     stageSummary.innerHTML = '<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.85rem; font-size: 0.82rem; color: var(--text-secondary); border-top: 1px solid var(--border-color); padding-top: 0.75rem;">' +
-                        '<span>Prepared: <strong>' + stagedFiles.length + ' file' + (stagedFiles.length > 1 ? 's' : '') + '</strong></span>' +
+                        '<span>Files: <strong>' + stagedFiles.length + ' (' + successCount + ' done)</strong></span>' +
                         '<span>Total Size: <strong>' + formatBytes(totalSize) + '</strong></span>' +
                         '</div>' +
                         '<div style="display: flex; gap: 0.75rem;">' +
-                            '<button class="btn" style="width: 100%; display: flex; justify-content: center; background: var(--accent-green); border: none; font-family: inherit; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.2);" onclick="shareStagedFiles()">' +
-                                '<svg style="width:16px;height:16px;fill:currentColor;margin-right:6px" viewBox="0 0 24 24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>' +
-                                'Share Prepared Files' +
-                            '</button>' +
-                            '<button class="btn btn-danger" onclick="clearStagedFiles()">Clear</button>' +
+                            shareButtonHtml +
+                            '<button class="btn btn-danger" onclick="clearStagedFiles()">Clear All</button>' +
                         '</div>';
                 }
 
                 async function shareStagedFiles() {
-                    if (isUploading || stagedFiles.length === 0) return;
+                    const pendingFiles = stagedFiles.filter(f => f.status === 'pending');
+                    if (pendingFiles.length === 0) return;
+                    
                     isUploading = true;
-                    
-                    // Hide delete buttons during upload
-                    document.querySelectorAll('.remove-staged-btn').forEach(btn => btn.style.display = 'none');
-                    // Disable clear btn
-                    const clearBtn = document.querySelector('.btn-danger');
-                    if (clearBtn) clearBtn.disabled = true;
-                    
                     progressContainer.style.display = 'block';
                     
-                    const totalFilesCount = stagedFiles.length;
-                    let successCount = 0;
+                    const totalToUpload = pendingFiles.length;
+                    let completedCount = 0;
                     
-                    while (stagedFiles.length > 0) {
-                        const file = stagedFiles[0];
-                        const currentNum = successCount + 1;
-                        
-                        const textSpan = document.querySelector('#progress-text span:first-child');
-                        if (textSpan) {
-                            textSpan.textContent = 'Uploading ' + currentNum + ' of ' + totalFilesCount + ': ' + file.name;
-                        }
-                        
-                        progressPercentage.textContent = '0%';
-                        progressFill.style.width = '0%';
+                    const uploadQueue = [...pendingFiles];
+                    const activeUploadsSet = new Set();
+                    const CONCURRENT_LIMIT = 4; // parallel uploads limit to prevent local socket exhaustion
+                    
+                    const runNextUpload = async () => {
+                        if (uploadQueue.length === 0) return;
+                        const item = uploadQueue.shift();
+                        activeUploadsSet.add(item);
+                        item.status = 'uploading';
+                        renderStagedFiles();
                         
                         try {
-                            await uploadFile(file);
-                            successCount++;
-                            stagedFiles.shift(); // Remove uploaded item
-                            renderStagedFiles(); // Re-render update
-                        } catch (e) {
-                            console.error("Upload failed", e);
-                            showToast("Upload failed: " + file.name);
-                            break; 
+                            await new Promise((resolve, reject) => {
+                                const xhr = new XMLHttpRequest();
+                                item.xhr = xhr;
+                                xhr.open('POST', '/upload?name=' + encodeURIComponent(item.file.name), true);
+                                
+                                xhr.upload.onprogress = (e) => {
+                                    const totalSize = e.total || item.file.size;
+                                    const pct = Math.round((e.loaded / totalSize) * 100);
+                                    item.progress = pct;
+                                    
+                                    // Update overall batch level bar
+                                    updateOverallProgress(totalToUpload, completedCount);
+                                    
+                                    // Update the inline label quickly without re-rendering all nodes
+                                    const stagedDoms = document.querySelectorAll('.staged-item');
+                                    stagedFiles.forEach((f, idx) => {
+                                        if (f === item && stagedDoms[idx]) {
+                                            const sizeLabel = stagedDoms[idx].querySelector('.staged-size');
+                                            if (sizeLabel) sizeLabel.textContent = 'Uploading: ' + pct + '%';
+                                            const fillBar = stagedDoms[idx].querySelector('.progress-fill');
+                                            if (fillBar) fillBar.style.width = pct + '%';
+                                        }
+                                    });
+                                };
+                                
+                                xhr.onload = () => {
+                                    if (xhr.status === 200) {
+                                        item.status = 'success';
+                                        item.progress = 100;
+                                        resolve();
+                                    } else {
+                                        item.status = 'failed';
+                                        reject(new Error('Status: ' + xhr.status));
+                                    }
+                                    renderStagedFiles();
+                                };
+                                
+                                xhr.onerror = () => {
+                                    item.status = 'failed';
+                                    reject(new Error('Network error'));
+                                    renderStagedFiles();
+                                };
+                                
+                                xhr.send(item.file);
+                            });
+                            completedCount++;
+                        } catch (err) {
+                            console.error('Core file transmission failed', err);
+                        } finally {
+                            item.xhr = null;
+                            activeUploadsSet.delete(item);
+                            updateOverallProgress(totalToUpload, completedCount);
+                            // Chain next
+                            await runNextUpload();
                         }
+                    };
+                    
+                    const workerPool = [];
+                    const poolCount = Math.min(CONCURRENT_LIMIT, uploadQueue.length);
+                    for (let h = 0; h < poolCount; h++) {
+                        workerPool.push(runNextUpload());
+                    }
+                    
+                    // Wait for all active uploads and remaining queue items to clear
+                    while (uploadQueue.length > 0 || activeUploadsSet.size > 0) {
+                        await new Promise(r => setTimeout(r, 200));
                     }
                     
                     isUploading = false;
                     progressContainer.style.display = 'none';
-                    if (stagedFiles.length === 0) {
-                        showToast('Successfully shared ' + successCount + ' files with Android!');
-                    } else {
-                        renderStagedFiles(); 
-                    }
+                    showToast('P2P local transmission processing completed!');
+                    renderStagedFiles();
                 }
 
-                function uploadFile(file) {
-                    return new Promise((resolve, reject) => {
-                        const xhr = new XMLHttpRequest();
-                        xhr.open('POST', '/upload?name=' + encodeURIComponent(file.name), true);
-
-                        xhr.upload.onprogress = (e) => {
-                            if (e.lengthComputable) {
-                                const pct = Math.round((e.loaded / e.total) * 100);
-                                progressFill.style.width = pct + '%';
-                                progressPercentage.textContent = pct + '%';
-                            }
-                        };
-
-                        xhr.onload = () => {
-                            if (xhr.status === 200) resolve();
-                            else reject(new Error('Status: ' + xhr.status));
-                        };
-                        xhr.onerror = () => reject(new Error('Network error'));
-                        xhr.send(file);
+                function updateOverallProgress(totalToUpload, completedCount) {
+                    let totalBytesExpected = 0;
+                    let totalBytesUploaded = 0;
+                    
+                    stagedFiles.forEach(item => {
+                        if (item.status === 'success') {
+                            totalBytesUploaded += item.file.size;
+                        } else if (item.status === 'uploading') {
+                            totalBytesUploaded += item.file.size * (item.progress / 100);
+                        }
+                        if (item.status !== 'pending') {
+                            totalBytesExpected += item.file.size;
+                        }
                     });
+                    
+                    if (totalBytesExpected > 0) {
+                        const pctOverall = Math.round((totalBytesUploaded / totalBytesExpected) * 100);
+                        progressFill.style.width = pctOverall + '%';
+                        progressPercentage.textContent = pctOverall + '%';
+                        
+                        const textSpan = document.querySelector('#progress-text span:first-child');
+                        if (textSpan) {
+                            textSpan.textContent = 'Overall Batch Progress (' + completedCount + '/' + totalToUpload + ' file(s) complete)';
+                        }
+                    }
                 }
 
                 setInterval(loadFiles, 3500);
