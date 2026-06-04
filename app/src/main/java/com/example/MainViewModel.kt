@@ -174,6 +174,23 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         prefs.edit().putString("theme_color", color).apply()
     }
 
+    // --- Dynamic Self-Updating Subsystem ---
+    sealed class UpdateState {
+        object Idle : UpdateState()
+        object Checking : UpdateState()
+        data class UpdateAvailable(val version: String, val notes: String, val downloadUrl: String) : UpdateState()
+        object NoUpdate : UpdateState()
+        data class Downloading(val progress: Int) : UpdateState()
+        data class ReadyToInstall(val apkFile: File) : UpdateState()
+        data class Error(val message: String) : UpdateState()
+    }
+
+    private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
+
+    private val _githubRepo = MutableStateFlow(prefs.getString("github_updater_repo", "rishabsaini893/QR-File-Share") ?: "rishabsaini893/QR-File-Share")
+    val githubRepo: StateFlow<String> = _githubRepo.asStateFlow()
+
     // Real-time track of connected device clients
     val connectedDevices: StateFlow<Map<String, ConnectedClient>> get() = fileServer.connectedDevices.asStateFlow()
 
@@ -686,23 +703,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             pushFilesToTarget(uris)
         }
     }
-
-    // --- Dynamic Self-Updating Subsystem ---
-    sealed class UpdateState {
-        object Idle : UpdateState()
-        object Checking : UpdateState()
-        data class UpdateAvailable(val version: String, val notes: String, val downloadUrl: String) : UpdateState()
-        object NoUpdate : UpdateState()
-        data class Downloading(val progress: Int) : UpdateState()
-        data class ReadyToInstall(val apkFile: File) : UpdateState()
-        data class Error(val message: String) : UpdateState()
-    }
-
-    private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
-    val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
-
-    private val _githubRepo = MutableStateFlow(prefs.getString("github_updater_repo", "rishabsaini893/QR-File-Share") ?: "rishabsaini893/QR-File-Share")
-    val githubRepo: StateFlow<String> = _githubRepo.asStateFlow()
 
     fun updateGithubRepo(newRepo: String) {
         _githubRepo.value = newRepo
