@@ -45,6 +45,7 @@ class HttpFileServer(
     private val onIncomingFile: (File, String, String) -> Unit // (file, originalName, senderIp)
 ) {
     private var server: HttpServer? = null
+    private var wifiLock: android.net.wifi.WifiManager.WifiLock? = null
     private val executor = Executors.newCachedThreadPool()
     val sharedFiles = mutableListOf<OutgoingShare>()
     var currentPort: Int = 8080
@@ -105,6 +106,24 @@ class HttpFileServer(
         try {
             stop()
             currentPort = port
+
+            // Acquire WiFi high-performance lock to prevent connection initiation delays or timeouts
+            try {
+                val wifiManager = context.applicationContext.getSystemService(Context.WIFI_SERVICE) as? android.net.wifi.WifiManager
+                if (wifiManager != null) {
+                    wifiLock = wifiManager.createWifiLock(
+                        android.net.wifi.WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+                        "HttpFileServer:WifiLock"
+                    ).apply {
+                        setReferenceCounted(false)
+                        acquire()
+                    }
+                    Log.d("HttpFileServer", "Acquired high performance Wi-Fi Lock")
+                }
+            } catch (ex: Exception) {
+                Log.e("HttpFileServer", "Failed to acquire WifiLock: ${ex.message}")
+            }
+
             server = HttpServer.create(InetSocketAddress("0.0.0.0", port), 0).apply {
                 createContext("/", DashboardHandler())
                 createContext("/shared_files_json", FilesJsonHandler())
@@ -143,6 +162,18 @@ class HttpFileServer(
             } catch (ex: Exception) {}
             server?.stop(0)
             server = null
+
+            // Release Wi-Fi lock safely
+            try {
+                if (wifiLock?.isHeld == true) {
+                    wifiLock?.release()
+                }
+                wifiLock = null
+                Log.d("HttpFileServer", "Released Wi-Fi Lock")
+            } catch (ex: Exception) {
+                Log.e("HttpFileServer", "Error releasing wifiLock: ${ex.message}")
+            }
+
             activeTransfers.value = emptyMap()
             connectedDevices.value = emptyMap()
         } catch (e: Exception) {
@@ -193,6 +224,19 @@ class HttpFileServer(
     }
 
     fun isRunning(): Boolean = server != null
+
+    fun updateMdnsIp(newIp: String, nsdAlias: String) {
+        if (!isRunning()) return
+        try {
+            mdnsResponder?.stop()
+            mdnsResponder = MdnsResponder(context, nsdAlias, newIp).apply {
+                start()
+            }
+            Log.d("HttpFileServer", "Successfully dynamic-migrated mDNS responder target to: $newIp")
+        } catch (ex: Exception) {
+            Log.e("HttpFileServer", "Error migrating mDNS ip matching: ${ex.message}")
+        }
+    }
 
     fun getLocalIpAddress(): String {
         return getAllLocalIpAddresses().firstOrNull() ?: "127.0.0.1"

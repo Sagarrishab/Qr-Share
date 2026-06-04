@@ -193,8 +193,28 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             Log.e("MainViewModel", "Failed to register network callback", e)
         }
+        
+        // Active-healing background network monitor loop
+        viewModelScope.launch(Dispatchers.IO) {
+            while (true) {
+                kotlinx.coroutines.delay(5000)
+                try {
+                    val currentIps = fileServer.getAllLocalIpAddresses()
+                    if (currentIps != _localIpAddresses.value) {
+                        Log.d("MainViewModel", "Periodic polling detected network address transitions. Updating UI dynamically...")
+                        refreshNetworkAddresses(forceAutoDetect = true)
+                    }
+                } catch (e: Exception) {
+                    Log.e("MainViewModel", "Error in periodic network monitor: ${e.message}")
+                }
+            }
+        }
+
         // Automatically start local file server in Host Mode by default
         startLocalServer()
+
+        // Automatically check for system updates from GitHub repository on startup
+        checkForUpdates()
     }
 
     fun setUiMode(mode: String) {
@@ -264,6 +284,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             
             val port = _selectedPort.value
             _serverUrl.value = if (fileServer.isRunning()) "http://$ipToUse:$port" else null
+            
+            if (fileServer.isRunning()) {
+                fileServer.updateMdnsIp(ipToUse, _customUrlAlias.value)
+            }
             
             if (ipAddresses.isNotEmpty() && ipAddresses.any { it != "127.0.0.1" }) {
                 _isNetworkConnected.value = true
@@ -660,6 +684,169 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val uris = _preparedFiles.value.map { it.uri }
         if (uris.isNotEmpty()) {
             pushFilesToTarget(uris)
+        }
+    }
+
+    // --- Dynamic Self-Updating Subsystem ---
+    sealed class UpdateState {
+        object Idle : UpdateState()
+        object Checking : UpdateState()
+        data class UpdateAvailable(val version: String, val notes: String, val downloadUrl: String) : UpdateState()
+        object NoUpdate : UpdateState()
+        data class Downloading(val progress: Int) : UpdateState()
+        data class ReadyToInstall(val apkFile: File) : UpdateState()
+        data class Error(val message: String) : UpdateState()
+    }
+
+    private val _updateState = MutableStateFlow<UpdateState>(UpdateState.Idle)
+    val updateState: StateFlow<UpdateState> = _updateState.asStateFlow()
+
+    private val _githubRepo = MutableStateFlow(prefs.getString("github_updater_repo", "rishabsaini893/QR-File-Share") ?: "rishabsaini893/QR-File-Share")
+    val githubRepo: StateFlow<String> = _githubRepo.asStateFlow()
+
+    fun updateGithubRepo(newRepo: String) {
+        _githubRepo.value = newRepo
+        prefs.edit().putString("github_updater_repo", newRepo).apply()
+    }
+
+    fun resetUpdateState() {
+        _updateState.value = UpdateState.Idle
+    }
+
+    fun checkForUpdates() {
+        _updateState.value = UpdateState.Checking
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val repo = _githubRepo.value.trim()
+                if (repo.isEmpty() || !repo.contains("/")) {
+                    _updateState.value = UpdateState.Error("Invalid repo format. Must be user/repo")
+                    return@launch
+                }
+
+                val urlConnection = java.net.URL("https://api.github.com/repos/$repo/releases/latest").openConnection() as java.net.HttpURLConnection
+                urlConnection.requestMethod = "GET"
+                urlConnection.setRequestProperty("Accept", "application/vnd.github.v3+json")
+                urlConnection.setRequestProperty("User-Agent", "Mozilla/5.0 (Android; DynamicUpdater)")
+                urlConnection.connectTimeout = 8000
+                urlConnection.readTimeout = 8000
+
+                val rc = urlConnection.responseCode
+                if (rc == 200) {
+                    val body = urlConnection.inputStream.bufferedReader().use { it.readText() }
+                    
+                    val tagRegex = """"tag_name"\s*:\s*"([^"]+)"""".toRegex()
+                    val bodyRegex = """"body"\s*:\s*"([^"]+)"""".toRegex()
+                    val apkUrlRegex = """"browser_download_url"\s*:\s*"([^"]+\.apk)"""".toRegex()
+                    val fallbackZipUrlRegex = """"zipball_url"\s*:\s*"([^"]+)"""".toRegex()
+
+                    val matchTag = tagRegex.find(body)
+                    val matchBody = bodyRegex.find(body)
+                    val matchApk = apkUrlRegex.find(body)
+                    val matchZip = fallbackZipUrlRegex.find(body)
+
+                    val remoteTag = matchTag?.groupValues?.get(1) ?: "unknown"
+                    val remoteNotes = matchBody?.groupValues?.get(1)
+                        ?.replace("\\r\\n", "\n")
+                        ?.replace("\\n", "\n") 
+                        ?: "No release notes provided."
+                    val downloadUrl = matchApk?.groupValues?.get(1) 
+                        ?: matchZip?.groupValues?.get(1) 
+                        ?: "https://github.com/$repo/releases/latest"
+
+                    val localVer = getLocalAppVersion()
+                    val cleanRemote = remoteTag.replace("v", "", ignoreCase = true).trim()
+                    val cleanLocal = localVer.replace("v", "", ignoreCase = true).trim()
+
+                    if (cleanRemote != cleanLocal && cleanRemote != "unknown" && cleanRemote.isNotEmpty()) {
+                        _updateState.value = UpdateState.UpdateAvailable(
+                            version = remoteTag,
+                            notes = remoteNotes,
+                            downloadUrl = downloadUrl
+                        )
+                    } else {
+                        _updateState.value = UpdateState.NoUpdate
+                    }
+                } else if (rc == 404) {
+                    _updateState.value = UpdateState.Error("No release found details (404). Check user/repo.")
+                } else {
+                    _updateState.value = UpdateState.Error("Server returned error code: $rc")
+                }
+            } catch (ex: Exception) {
+                Log.e("MainViewModel", "Check for update failed: ${ex.message}", ex)
+                _updateState.value = UpdateState.Error(ex.localizedMessage ?: "Network connection error")
+            }
+        }
+    }
+
+    fun downloadAndInstallUpdate(downloadUrl: String) {
+        _updateState.value = UpdateState.Downloading(0)
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val url = java.net.URL(downloadUrl)
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
+                conn.connect()
+
+                if (conn.responseCode !in 200..299) {
+                    _updateState.value = UpdateState.Error("Failed to fetch download. HTTP code: ${conn.responseCode}")
+                    return@launch
+                }
+
+                val length = conn.contentLength
+                var totalRead = 0L
+
+                val updateDir = File(context.getExternalFilesDir(null), "Updates")
+                if (!updateDir.exists()) {
+                    updateDir.mkdirs()
+                }
+
+                val apkFile = File(updateDir, "update.apk")
+                if (apkFile.exists()) {
+                    apkFile.delete()
+                }
+
+                conn.inputStream.use { input ->
+                    apkFile.outputStream().use { output ->
+                        val buffer = ByteArray(8192)
+                        var read: Int
+                        while (input.read(buffer).also { read = it } != -1) {
+                            output.write(buffer, 0, read)
+                            totalRead += read
+                            if (length > 0) {
+                                val pct = ((totalRead * 100) / length).toInt()
+                                _updateState.value = UpdateState.Downloading(pct)
+                            } else {
+                                _updateState.value = UpdateState.Downloading(-1) // indeterminate
+                            }
+                        }
+                    }
+                }
+
+                _updateState.value = UpdateState.ReadyToInstall(apkFile)
+            } catch (ex: java.io.FileNotFoundException) {
+                _updateState.value = UpdateState.Error("Release doesn't contain a direct APK file in assets.")
+            } catch (ex: Exception) {
+                Log.e("MainViewModel", "Download failed: ${ex.message}", ex)
+                _updateState.value = UpdateState.Error("Download failed: ${ex.localizedMessage}")
+            }
+        }
+    }
+
+    fun simulateNewVersionAvailable() {
+        _updateState.value = UpdateState.UpdateAvailable(
+            version = "v2.0.0-Demo",
+            notes = "This is a simulated sandbox test release to verify beautiful downloading and installation states!\n\nAdded details:\n• Fast Wi-Fi lock capability\n• Complete layout fix with spaced label alignments\n• Real-time network transition handlers",
+            downloadUrl = "https://github.com/rishabsaini893/QR-File-Share/releases/download/v1.0/app-debug.apk" // Fallback fallback release download or mock
+        )
+    }
+
+    private fun getLocalAppVersion(): String {
+        return try {
+            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+            pInfo.versionName ?: "1.0"
+        } catch (e: Exception) {
+            "1.0"
         }
     }
 

@@ -56,6 +56,12 @@ android {
     buildConfig = true
   }
   testOptions { unitTests { isIncludeAndroidResources = true } }
+  packaging {
+    resources {
+      excludes += "**/AGENTS.md"
+      excludes += "**/agents.md"
+    }
+  }
 }
 
 // Configure the Secrets Gradle Plugin to use .env and .env.example files

@@ -108,6 +108,8 @@ fun MainScreen(
     val isGlobalTunnelConnecting by viewModel.isGlobalTunnelConnecting.collectAsState()
     val globalTunnelError by viewModel.globalTunnelError.collectAsState()
 
+    val currentUpdateState by viewModel.updateState.collectAsState()
+
     var bottomTab by remember { mutableStateOf("HOME") }
     var showAboutAppDialog by remember { mutableStateOf(false) }
 
@@ -174,7 +176,18 @@ fun MainScreen(
                                     contentDescription = "Home"
                                 ) 
                             },
-                            label = { Text("Home") },
+                            label = { 
+                                Text(
+                                    text = "Home",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
                             colors = navItemColors,
                             modifier = Modifier.testTag("nav_home")
                         )
@@ -187,7 +200,18 @@ fun MainScreen(
                                     contentDescription = "Receive from PC"
                                 ) 
                             },
-                            label = { Text("PC Receive", maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                            label = { 
+                                Text(
+                                    text = "PC Receive",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
                             colors = navItemColors,
                             modifier = Modifier.testTag("nav_receive_pc")
                         )
@@ -200,7 +224,18 @@ fun MainScreen(
                                     contentDescription = "Global Share"
                                 ) 
                             },
-                            label = { Text("Global Share") },
+                            label = { 
+                                Text(
+                                    text = "Global",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
                             colors = navItemColors,
                             modifier = Modifier.testTag("nav_global")
                         )
@@ -213,7 +248,18 @@ fun MainScreen(
                                     contentDescription = "How to Use"
                                 ) 
                             },
-                            label = { Text("How to Use") },
+                            label = { 
+                                Text(
+                                    text = "How To",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
                             colors = navItemColors,
                             modifier = Modifier.testTag("nav_how_to_use")
                         )
@@ -226,7 +272,18 @@ fun MainScreen(
                                     contentDescription = "More"
                                 ) 
                             },
-                            label = { Text("More") },
+                            label = { 
+                                Text(
+                                    text = "More",
+                                    style = MaterialTheme.typography.labelSmall.copy(
+                                        fontSize = 10.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        textAlign = TextAlign.Center
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            },
                             colors = navItemColors,
                             modifier = Modifier.testTag("nav_more")
                         )
@@ -461,6 +518,70 @@ fun MainScreen(
 
     if (showAboutAppDialog) {
         AppAboutDialog(onDismiss = { showAboutAppDialog = false })
+    }
+
+    if (currentUpdateState is MainViewModel.UpdateState.UpdateAvailable) {
+        val updateDetails = currentUpdateState as MainViewModel.UpdateState.UpdateAvailable
+        AlertDialog(
+            onDismissRequest = { viewModel.resetUpdateState() },
+            confirmButton = {
+                Button(
+                    onClick = { viewModel.downloadAndInstallUpdate(updateDetails.downloadUrl) }
+                ) {
+                    Text("Download & Install")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.resetUpdateState() }) {
+                    Text("Remind Me Later")
+                }
+            },
+            title = {
+                Text("Update Available: ${updateDetails.version}", style = MaterialTheme.typography.titleLarge)
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "A new version of QR File Share is ready!",
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Release Notes:",
+                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 200.dp)
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                                RoundedCornerShape(8.dp)
+                            )
+                            .padding(8.dp)
+                    ) {
+                        LazyColumn {
+                            item {
+                                Text(
+                                    text = updateDetails.notes,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Note: Installing updates requires granting permission to install packages from unknown sources.",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                }
+            }
+        )
     }
 }
 
@@ -954,6 +1075,46 @@ fun GlobalSharePage(
     }
 }
 
+fun installApk(context: Context, apkFile: File) {
+    try {
+        if (!apkFile.exists()) {
+            Toast.makeText(context, "APK file not found.", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val authority = "${context.packageName}.fileprovider"
+        val apkUri = FileProvider.getUriForFile(context, authority, apkFile)
+
+        // Android 8.0+ Check
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            val pm = context.packageManager
+            if (!pm.canRequestPackageInstalls()) {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${context.packageName}")
+                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                Toast.makeText(
+                    context,
+                    "Please authorize this application to install updates under settings.",
+                    Toast.LENGTH_LONG
+                ).show()
+                context.startActivity(intent)
+                return
+            }
+        }
+
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(apkUri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        Log.e("Updater", "Triggering installation failed", e)
+        Toast.makeText(context, "Could not start packaging installation: ${e.message}", Toast.LENGTH_LONG).show()
+    }
+}
+
 @Composable
 fun MorePage(
     customUrlAlias: String,
@@ -968,6 +1129,9 @@ fun MorePage(
 
     val currentThemeMode by viewModel.themeMode.collectAsState()
     val currentThemeColor by viewModel.themeColor.collectAsState()
+    
+    val currentUpdateState by viewModel.updateState.collectAsState()
+    val currentGithubRepo by viewModel.githubRepo.collectAsState()
 
     LazyColumn(
         modifier = Modifier
@@ -1020,6 +1184,264 @@ fun MorePage(
                         ) {
                             Text("Apply")
                         }
+                    }
+                }
+            }
+        }
+
+        // Section: In-App Updates System
+        item {
+            Text(
+                text = "System Update",
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.primary
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.12f)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = "GitHub In-App Auto Update",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = "Keep your app up-to-date with current releases",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(14.dp))
+                    
+                    // Show Current App Version & Repo Location
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(
+                                MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.35f),
+                                RoundedCornerShape(12.dp)
+                            )
+                            .padding(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = "Current Version:",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            val appVerName = try {
+                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0"
+                            } catch (e: Exception) { "1.0" }
+                            Text(
+                                text = "v$appVerName",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Text(
+                            text = "GitHub Release Repository:",
+                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        var repoInputText by remember(currentGithubRepo) { mutableStateOf(currentGithubRepo) }
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = repoInputText,
+                                onValueChange = { repoInputText = it },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f).testTag("updater_repo_input"),
+                                textStyle = MaterialTheme.typography.bodySmall,
+                                shape = RoundedCornerShape(8.dp),
+                                maxLines = 1
+                            )
+                            Button(
+                                onClick = { 
+                                    viewModel.updateGithubRepo(repoInputText)
+                                    Toast.makeText(context, "GitHub target repository updated!", Toast.LENGTH_SHORT).show()
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                                contentPadding = PaddingValues(horizontal = 8.dp)
+                            ) {
+                                Text("Set", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(14.dp))
+
+                    // Buttons to Check or Force Demo
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.checkForUpdates() },
+                            modifier = Modifier.weight(1f).testTag("updater_check_btn"),
+                            shape = RoundedCornerShape(10.dp)
+                        ) {
+                            Text("Check Updates", style = MaterialTheme.typography.labelMedium)
+                        }
+                        
+                        // Simulation Button for Sandbox testing & inspection, visually clear as non-production
+                        OutlinedButton(
+                            onClick = { viewModel.simulateNewVersionAvailable() },
+                            modifier = Modifier.weight(1.0f).testTag("updater_demo_btn"),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.5f))
+                        ) {
+                            Text("Demo Update Flow", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+
+                    // --- Render Live States Inside Card ---
+                    when (val state = currentUpdateState) {
+                        is MainViewModel.UpdateState.Checking -> {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.Center
+                            ) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Text("Contacting GitHub API releases...", style = MaterialTheme.typography.bodySmall)
+                            }
+                        }
+                        is MainViewModel.UpdateState.NoUpdate -> {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFF10B981), modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("App is completely up-to-date!", style = MaterialTheme.typography.bodySmall, color = Color(0xFF10B981))
+                            }
+                        }
+                        is MainViewModel.UpdateState.Error -> {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(state.message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                                TextButton(onClick = { viewModel.resetUpdateState() }) {
+                                    Text("Clear", style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
+                        }
+                        is MainViewModel.UpdateState.Downloading -> {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    val prog = state.progress
+                                    Text(
+                                        text = if (prog >= 0) "Downloading update: $prog%" else "Downloading file...",
+                                        style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold)
+                                    )
+                                    TextButton(
+                                        onClick = { viewModel.resetUpdateState() },
+                                        contentPadding = PaddingValues(0.dp)
+                                    ) {
+                                        Text("Cancel", style = MaterialTheme.typography.labelSmall)
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                if (state.progress >= 0) {
+                                    LinearProgressIndicator(
+                                        progress = { state.progress / 100f },
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                } else {
+                                    LinearProgressIndicator(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        color = MaterialTheme.colorScheme.primary,
+                                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        is MainViewModel.UpdateState.ReadyToInstall -> {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Card(
+                                modifier = Modifier.fillMaxWidth(),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.25f))
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Download Complete!",
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                    Text(
+                                        text = "The update file is ready. Click below to install the application.",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                    Spacer(modifier = Modifier.height(10.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Button(
+                                            onClick = { installApk(context, state.apkFile) },
+                                            modifier = Modifier.weight(1f),
+                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                                        ) {
+                                            Text("Install Now")
+                                        }
+                                        OutlinedButton(
+                                            onClick = { viewModel.resetUpdateState() },
+                                            modifier = Modifier.weight(0.5f)
+                                        ) {
+                                            Text("Cancel")
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else -> {}
                     }
                 }
             }
