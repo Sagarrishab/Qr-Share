@@ -1261,42 +1261,6 @@ fun MorePage(
                                 color = MaterialTheme.colorScheme.primary
                             )
                         }
-                        
-                        Spacer(modifier = Modifier.height(8.dp))
-                        
-                        Text(
-                            text = "GitHub Release Repository:",
-                            style = MaterialTheme.typography.bodySmall.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        var repoInputText by remember(currentGithubRepo) { mutableStateOf(currentGithubRepo) }
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            OutlinedTextField(
-                                value = repoInputText,
-                                onValueChange = { repoInputText = it },
-                                singleLine = true,
-                                modifier = Modifier.weight(1f).testTag("updater_repo_input"),
-                                textStyle = MaterialTheme.typography.bodySmall,
-                                shape = RoundedCornerShape(8.dp),
-                                maxLines = 1
-                            )
-                            Button(
-                                onClick = { 
-                                    viewModel.updateGithubRepo(repoInputText)
-                                    Toast.makeText(context, "GitHub target repository updated!", Toast.LENGTH_SHORT).show()
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                contentPadding = PaddingValues(horizontal = 8.dp)
-                            ) {
-                                Text("Set", style = MaterialTheme.typography.bodySmall)
-                            }
-                        }
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))

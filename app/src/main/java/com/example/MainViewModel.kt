@@ -831,10 +831,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun simulateNewVersionAvailable() {
+        val repo = _githubRepo.value.trim()
         _updateState.value = UpdateState.UpdateAvailable(
             version = "v2.0.0-Demo",
             notes = "This is a simulated sandbox test release to verify beautiful downloading and installation states!\n\nAdded details:\n• Fast Wi-Fi lock capability\n• Complete layout fix with spaced label alignments\n• Real-time network transition handlers",
-            downloadUrl = "https://github.com/Sagarrishab/Qr-Share/releases/download/v1.1.0/app-release.apk" // Fallback release download
+            downloadUrl = "https://github.com/$repo/releases/download/v1.1.0/app-release.apk" // Fallback release download
         )
     }
 
