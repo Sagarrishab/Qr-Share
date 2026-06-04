@@ -1249,8 +1249,12 @@ fun MorePage(
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             val appVerName = try {
-                                context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.0"
-                            } catch (e: Exception) { "1.0" }
+                                com.example.BuildConfig.VERSION_NAME
+                            } catch (e: Exception) {
+                                try {
+                                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.2.0"
+                                } catch (ex: Exception) { "1.2.0" }
+                            }
                             Text(
                                 text = "v$appVerName",
                                 style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),

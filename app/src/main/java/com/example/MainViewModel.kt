@@ -754,10 +754,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                         ?: "https://github.com/$repo/releases/latest"
 
                     val localVer = getLocalAppVersion()
-                    val cleanRemote = remoteTag.replace("v", "", ignoreCase = true).trim()
-                    val cleanLocal = localVer.replace("v", "", ignoreCase = true).trim()
-
-                    if (cleanRemote != cleanLocal && cleanRemote != "unknown" && cleanRemote.isNotEmpty()) {
+                    if (remoteTag != "unknown" && remoteTag.isNotEmpty() && isNewerVersion(localVer, remoteTag)) {
                         _updateState.value = UpdateState.UpdateAvailable(
                             version = remoteTag,
                             notes = remoteNotes,
@@ -841,12 +838,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    private fun isNewerVersion(local: String, remote: String): Boolean {
+        try {
+            val cleanLocal = local.replace("v", "", ignoreCase = true).trim().split('.')
+            val cleanRemote = remote.replace("v", "", ignoreCase = true).trim().split('.')
+            
+            val maxLen = maxOf(cleanLocal.size, cleanRemote.size)
+            for (i in 0 until maxLen) {
+                val localPart = cleanLocal.getOrNull(i)?.toIntOrNull() ?: 0
+                val remotePart = cleanRemote.getOrNull(i)?.toIntOrNull() ?: 0
+                if (remotePart > localPart) return true
+                if (localPart > remotePart) return false
+            }
+        } catch (e: Exception) {
+            Log.e("MainViewModel", "Error comparing versions", e)
+        }
+        return false
+    }
+
     private fun getLocalAppVersion(): String {
         return try {
-            val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-            pInfo.versionName ?: "1.0"
+            com.example.BuildConfig.VERSION_NAME
         } catch (e: Exception) {
-            "1.0"
+            try {
+                val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+                pInfo.versionName ?: "1.2.0"
+            } catch (ex: Exception) {
+                "1.2.0"
+            }
         }
     }
 
