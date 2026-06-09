@@ -689,6 +689,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun addAndTransferPhoto(photoUri: Uri) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val (name, size) = getFileInfo(context, photoUri)
+            val prepared = PreparedFile(photoUri, name, size)
+            val newList = _preparedFiles.value.toMutableList()
+            if (newList.none { it.uri == photoUri }) {
+                newList.add(prepared)
+            }
+            _preparedFiles.value = newList
+            pushFilesToTarget(listOf(photoUri))
+        }
+    }
+
     fun removePreparedFile(uri: Uri) {
         _preparedFiles.value = _preparedFiles.value.filter { it.uri != uri }
     }
@@ -863,9 +876,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             try {
                 val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
-                pInfo.versionName ?: "1.2.0"
+                pInfo.versionName ?: "1.2.1"
             } catch (ex: Exception) {
-                "1.2.0"
+                "1.2.1"
             }
         }
     }

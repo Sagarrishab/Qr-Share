@@ -56,6 +56,8 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.animation.core.*
 import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.graphics.drawscope.Stroke
 import com.example.ui.theme.MyApplicationTheme
 import java.io.File
 
@@ -143,6 +145,44 @@ fun MainScreen(
     ) { uris ->
         if (uris.isNotEmpty()) {
             viewModel.addPreparedFiles(uris)
+        }
+    }
+
+    var photoUri by remember { mutableStateOf<Uri?>(null) }
+
+    val takePictureLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicture()
+    ) { success ->
+        if (success) {
+            photoUri?.let { uri ->
+                viewModel.addAndTransferPhoto(uri)
+            }
+        }
+    }
+
+    val onQuickCameraClick = {
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            try {
+                val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+                val storageDir = File(context.cacheDir, "Camera")
+                if (!storageDir.exists()) {
+                    storageDir.mkdirs()
+                }
+                val imageFile = File.createTempFile(
+                    "JPEG_${timeStamp}_",
+                    ".jpg",
+                    storageDir
+                )
+                val authority = "${context.packageName}.fileprovider"
+                val uri = FileProvider.getUriForFile(context, authority, imageFile)
+                photoUri = uri
+                takePictureLauncher.launch(uri)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error starting camera storage", e)
+                Toast.makeText(context, "Could not initialize storage for camera", Toast.LENGTH_SHORT).show()
+            }
+        } else {
+            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
         }
     }
 
@@ -461,7 +501,7 @@ fun MainScreen(
                                                     onTransferPreparedFiles = { viewModel.transferPreparedFiles() },
                                                     onRequestPermission = { cameraPermissionLauncher.launch(Manifest.permission.CAMERA) },
                                                     onQrScanned = { viewModel.onTargetScanned(it) },
-                                                    onSelectFiles = { clientFilePickerLauncher.launch("*/*") },
+                                                    onSelectFiles = { clientFilePickerLauncher.launch("*/*") }, onQuickCameraClick = onQuickCameraClick,
                                                     onReset = {
                                                         viewModel.clearTargetUrl()
                                                         viewModel.clearPreparedFiles()
@@ -1252,8 +1292,8 @@ fun MorePage(
                                 com.example.BuildConfig.VERSION_NAME
                             } catch (e: Exception) {
                                 try {
-                                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.2.0"
-                                } catch (ex: Exception) { "1.2.0" }
+                                    context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "1.2.1"
+                                } catch (ex: Exception) { "1.2.1" }
                             }
                             Text(
                                 text = "v$appVerName",
@@ -2973,7 +3013,7 @@ fun ScanPanel(
     onClearPreparedFiles: () -> Unit,
     onTransferPreparedFiles: () -> Unit,
     onRequestPermission: () -> Unit,
-    onQrScanned: (String) -> Unit,
+    onQrScanned: (String) -> Unit, onQuickCameraClick: () -> Unit,
     onSelectFiles: () -> Unit,
     onReset: () -> Unit
 ) {
@@ -3132,7 +3172,7 @@ fun ScanPanel(
                     onRemovePreparedFile = onRemovePreparedFile,
                     onClearPreparedFiles = onClearPreparedFiles,
                     onTransferPreparedFiles = onTransferPreparedFiles,
-                    onSelectFiles = onSelectFiles,
+                    onSelectFiles = onSelectFiles, onQuickCameraClick = onQuickCameraClick,
                     onReset = onReset
                 )
             }
@@ -3142,6 +3182,7 @@ fun ScanPanel(
 
 @Composable
 fun ConnectedClientPanel(
+    onQuickCameraClick: () -> Unit,
     status: ClientTransferStatus,
     targetUrl: String,
     preparedFiles: List<PreparedFile>,
@@ -3184,17 +3225,37 @@ fun ConnectedClientPanel(
                     )
                     Spacer(modifier = Modifier.height(24.dp))
 
-                    Button(
-                        onClick = onSelectFiles,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(50.dp)
-                            .testTag("client_select_files_button")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(imageVector = Icons.Default.Add, contentDescription = null)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Select Files to Transfer", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold))
+                        Button(
+                            onClick = onSelectFiles,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("client_select_files_button")
+                        ) {
+                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Select Files", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
+
+                        Button(
+                            onClick = onQuickCameraClick,
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp)
+                                .testTag("client_camera_upload_button")
+                        ) {
+                            CameraIcon(tint = MaterialTheme.colorScheme.onSecondary)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Quick Cam", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -3362,38 +3423,58 @@ fun ConnectedClientPanel(
                     }
 
                     // Bottom Action block
-                    Row(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(bottom = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Outlined Add More button
-                        OutlinedButton(
-                            onClick = onSelectFiles,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(50.dp)
-                                .testTag("client_add_more_files_button"),
-                            shape = RoundedCornerShape(14.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Add Files", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
+                            // Outlined Add More button
+                            OutlinedButton(
+                                onClick = onSelectFiles,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("client_add_more_files_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary)
+                            ) {
+                                Icon(imageVector = Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Add Files", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+
+                            // Quick Camera button
+                            FilledTonalButton(
+                                onClick = onQuickCameraClick,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(48.dp)
+                                    .testTag("client_camera_add_button"),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.filledTonalButtonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                            ) {
+                                CameraIcon(tint = MaterialTheme.colorScheme.onSecondaryContainer)
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text("Quick Cam", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
                         }
 
                         // Solid Primary "Transfer Now" button
                         Button(
                             onClick = onTransferPreparedFiles,
                             modifier = Modifier
-                                .weight(1.3f)
-                                .height(50.dp)
+                                .fillMaxWidth()
+                                .height(48.dp)
                                 .testTag("client_start_transfer_button"),
-                            shape = RoundedCornerShape(14.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                         ) {
-                            Icon(imageVector = Icons.Default.Send, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(imageVector = Icons.Default.Send, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text("Send to PC", style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.Bold))
                         }
@@ -5351,5 +5432,43 @@ fun formatBytesHelper(bytes: Long): String {
     val i = (Math.log(bytes.toDouble()) / Math.log(k.toDouble())).toInt()
     val value = bytes.toDouble() / Math.pow(k.toDouble(), i.toDouble())
     return String.format("%.1f %s", value, sizes[i])
+}
+
+@Composable
+fun CameraIcon(modifier: Modifier = Modifier, tint: Color = Color.White) {
+    Box(
+        modifier = modifier.size(18.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val strokeWidth = 4f
+            
+            // Camera top-notch (shutter button / flash area)
+            drawRoundRect(
+                color = tint,
+                topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.35f, size.height * 0.08f),
+                size = androidx.compose.ui.geometry.Size(size.width * 0.3f, size.height * 0.17f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(2f, 2f),
+                style = Stroke(width = strokeWidth)
+            )
+            
+            // Camera main body
+            drawRoundRect(
+                color = tint,
+                topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.1f, size.height * 0.25f),
+                size = androidx.compose.ui.geometry.Size(size.width * 0.8f, size.height * 0.67f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(5f, 5f),
+                style = Stroke(width = strokeWidth)
+            )
+            
+            // Camera lens ring
+            drawCircle(
+                color = tint,
+                center = center.copy(y = center.y + size.height * 0.08f),
+                radius = size.width * 0.18f,
+                style = Stroke(width = strokeWidth)
+            )
+        }
+    }
 }
 
